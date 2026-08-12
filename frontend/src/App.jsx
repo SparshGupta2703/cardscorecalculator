@@ -1,246 +1,286 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
-import html2canvas from 'html2canvas'; // New Import
 import './App.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL 
-//  'http://localhost:4000';
+// const SOCKET_URL = import.meta.env.VITE_SOCKET_URL 
+const SOCKET_URL = 'http://localhost:4000';
+
+
 const socket = io(SOCKET_URL);
 
-// --- COMPONENT: Editable Player Name ---
-const NameInput = ({ player, index, disabled }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [localName, setLocalName] = useState(player.name);
+// Frontend visual validator (mirrors backend logic)
+const checkPlayable = (hand, cardToPlay, trick) => {
+  if (trick.length === 0) return true;
+  const leadSuit = trick[0].card.suit;
+  const leadSuitCards = trick.filter(t => t.card.suit === leadSuit);
+  const highestLeadRank = Math.max(...leadSuitCards.map(t => t.card.rank));
+  const isTrumped = leadSuit !== 'spades' && trick.some(t => t.card.suit === 'spades');
+  const handHasLead = hand.some(c => c.suit === leadSuit);
+  const handCanBeatLead = hand.some(c => c.suit === leadSuit && c.rank > highestLeadRank);
+  const handHasSpades = hand.some(c => c.suit === 'spades');
 
-  useEffect(() => {
-    if (!isEditing) setLocalName(player.name);
-  }, [player.name, isEditing]);
-
-  const handleSave = () => {
-    setIsEditing(false);
-    if (localName.trim() !== '' && localName !== player.name) {
-      socket.emit('UPDATE_PLAYER_NAME', { index, name: localName });
-    } else {
-      setLocalName(player.name);
-    }
-  };
-
-  if (isEditing) {
-    return (
-      <div className="name-input-wrapper">
-        <input type="text" className="player-name-input active-edit" value={localName} onChange={(e) => setLocalName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSave()} onBlur={handleSave} autoFocus />
-      </div>
-    );
-  }
-
-  return (
-    <div className="name-input-wrapper">
-      <div className="player-name-display">
-        <span>{player.name}</span>
-        {!disabled && <button className="edit-name-btn" onClick={() => setIsEditing(true)}>✎</button>}
-      </div>
-    </div>
-  );
+  if (!isTrumped && handCanBeatLead) return cardToPlay.suit === leadSuit && cardToPlay.rank > highestLeadRank;
+  if (handHasLead) return cardToPlay.suit === leadSuit;
+  if (handHasSpades) return cardToPlay.suit === 'spades';
+  return true;
 };
 
-// --- COMPONENT: Editable Score Cell (Host Only) ---
-const EditableScore = ({ roundIndex, playerIndex, initialValue, isHost }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [val, setVal] = useState(initialValue);
-
-  useEffect(() => setVal(initialValue), [initialValue]);
-
-  const handleSave = () => {
-    setIsEditing(false);
-    const num = parseInt(val, 10);
-    if (!isNaN(num) && num !== initialValue) {
-      socket.emit('EDIT_SCORE', { roundIndex, playerIndex, newChange: num });
-    } else {
-      setVal(initialValue);
-    }
-  };
-
-  if (isEditing && isHost) {
-    return (
-      <input 
-        type="number" className="edit-score-input" value={val} 
-        onChange={(e) => setVal(e.target.value)} 
-        onBlur={handleSave} onKeyDown={(e) => e.key === 'Enter' && handleSave()} autoFocus 
-      />
-    );
+// --- HELPER COMPONENT: Playing Card ---
+const PlayingCard = ({ card, faceDown, onClick, isPlayable, isDimmed }) => {
+  if (faceDown) {
+    return <div className="card face-down">🂠</div>;
   }
+
+  const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
+  const suits = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
+  
+  let displayRank = card.rank;
+  if (card.rank === 11) displayRank = 'J';
+  if (card.rank === 12) displayRank = 'Q';
+  if (card.rank === 13) displayRank = 'K';
+  if (card.rank === 14) displayRank = 'A';
 
   return (
     <div 
-      className={`score-change ${isHost ? 'host-editable' : ''}`} 
-      onClick={() => isHost && setIsEditing(true)}
-      title={isHost ? "Click to edit score" : ""}
+      className={`card ${isRed ? 'red-suit' : 'black-suit'} ${isPlayable ? 'playable' : ''} ${isDimmed ? 'dimmed-card' : ''}`} 
+      onClick={isPlayable ? onClick : undefined}
     >
-      {initialValue > 0 ? `+${initialValue}` : initialValue}
+      <div className="card-top">{displayRank} {suits[card.suit]}</div>
+      <div className="card-center">{suits[card.suit]}</div>
+      <div className="card-bottom">{displayRank} {suits[card.suit]}</div>
     </div>
   );
 };
-
 
 // --- MAIN APP ---
 export default function App() {
   const [gameState, setGameState] = useState(null);
-  const [bidInput, setBidInput] = useState('');
   const [playingAs, setPlayingAs] = useState('ALL'); 
-  const [darkMode, setDarkMode] = useState(false);
-  
-  const tableRef = useRef(null); // Reference for the Screenshot
+  const [bidInput, setBidInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     socket.on('STATE_UPDATE', (state) => {
       setGameState(state);
       if (state.phase === 'bidding') setBidInput('');
     });
-    return () => socket.off('STATE_UPDATE');
+
+    socket.on('INVALID_PLAY', (msg) => {
+      setErrorMsg(msg);
+      setTimeout(() => setErrorMsg(null), 3000);
+    });
+
+    return () => {
+      socket.off('STATE_UPDATE');
+      socket.off('INVALID_PLAY');
+    };
   }, []);
 
-  if (!gameState) return <div className="loading">Connecting to Spades Server...</div>;
+  if (!gameState) return <div className="loading">Connecting to Spades Table...</div>;
 
-  const { players, currentRound, phase, currentBidderIndex, currentBids, roundOutcomes, history } = gameState;
-  const isMyProfile = (idx) => playingAs === 'ALL' || playingAs === idx;
+  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history } = gameState;
+  const isMyTurn = phase !== 'waiting' && playingAs === currentTurnIndex;
 
   const handleBidSubmit = (e) => {
     e.preventDefault();
     if (bidInput === '' || isNaN(bidInput)) return;
-    socket.emit('SUBMIT_BID', { index: currentBidderIndex, bid: parseInt(bidInput, 10) });
+    socket.emit('SUBMIT_BID', { index: currentTurnIndex, bid: parseInt(bidInput, 10) });
   };
 
-  const handleScoreSubmit = () => {
-    if (roundOutcomes.some(val => val === null)) {
-      alert('Waiting for all players to mark ✓ or × !');
-      return;
-    }
-    socket.emit('COMPLETE_ROUND');
-  };
-
-  // --- SCREENSHOT LOGIC ---
-  const handleScreenshot = async () => {
-    if (tableRef.current) {
-      const canvas = await html2canvas(tableRef.current, {
-        backgroundColor: darkMode ? '#1e293b' : '#ffffff',
-        scale: 2 // High resolution
-      });
-      const image = canvas.toDataURL("image/png");
-      const link = document.createElement('a');
-      link.href = image;
-      link.download = `Spades_Scores_Round_${currentRound - 1}.png`;
-      link.click();
-    }
+  const handlePlayCard = (cardId) => {
+    if (!isMyTurn || phase !== 'playing' || currentTrick.length >= 4) return;
+    socket.emit('PLAY_CARD', { playerIndex: playingAs, cardId });
   };
 
   return (
-    <div className={`theme-wrapper ${darkMode ? 'dark-theme' : 'light-theme'}`}>
+    <div className="theme-wrapper dark-theme">
       <div className="app-container">
+        
+        {/* HEADER */}
         <header>
           <div>
-            <h1>Spades Scorekeeper</h1>
+            <h1>♠ Spades Engine</h1>
             <div className="profile-selector">
-              <label>Playing As: </label>
+              <label>Seat: </label>
               <select value={playingAs} onChange={(e) => setPlayingAs(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}>
-                <option value="ALL">Host (Control All)</option>
+                <option value="ALL">Spectator (Host)</option>
                 {players.map((p, i) => <option key={i} value={i}>{p.name}</option>)}
               </select>
             </div>
           </div>
           <div className="header-right">
-            <button className="theme-toggle" onClick={() => setDarkMode(!darkMode)}>
-              {darkMode ? '☀️ Light' : '🌙 Dark'}
-            </button>
-            <p className="round-badge">Round {currentRound}</p>
-            {playingAs === 'ALL' && <button className="reset-btn" onClick={() => window.confirm('Reset Game?') && socket.emit('RESET_GAME')}>Reset Game</button>}
+            <p className="round-badge">Round {round}</p>
+            <div className="spades-status">
+              Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}
+            </div>
           </div>
         </header>
 
-        <section className="players-grid">
-          {players.map((p, idx) => {
-            const canEdit = isMyProfile(idx);
-            return (
-              <div key={p.id} className={`player-card ${phase === 'bidding' && currentBidderIndex === idx ? 'active-turn' : ''} ${!canEdit ? 'disabled-card' : ''}`}>
-                <NameInput player={p} index={idx} disabled={!canEdit} />
-                <div className="total-score">{p.score} pts</div>
-                <div className="bid-badge">Bid: {currentBids[idx] !== null ? currentBids[idx] : '-'}</div>
-                {phase === 'scoring' && (
-                  <div className="decision-buttons">
-                    <button disabled={!canEdit} className={`check-btn ${roundOutcomes[idx] === true ? 'selected' : ''}`} onClick={() => socket.emit('TOGGLE_OUTCOME', { index: idx, made: true })}>✓</button>
-                    <button disabled={!canEdit} className={`cross-btn ${roundOutcomes[idx] === false ? 'selected' : ''}`} onClick={() => socket.emit('TOGGLE_OUTCOME', { index: idx, made: false })}>×</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </section>
+        {errorMsg && <div className="error-toast">⚠️ {errorMsg}</div>}
 
-        <section className="action-panel">
-          {phase === 'bidding' && (
-            <div className="bid-container">
-              {isMyProfile(currentBidderIndex) ? (
-                <form onSubmit={handleBidSubmit} className="bid-form">
-                  <label><strong>{players[currentBidderIndex].name}</strong>, enter bid:</label>
-                  <input type="number" min="0" max="13" value={bidInput} onChange={(e) => setBidInput(e.target.value)} autoFocus />
-                  <button type="submit">Submit</button>
-                </form>
-              ) : (
-                <p>Waiting for <strong>{players[currentBidderIndex].name}</strong> to bid...</p>
+        {/* VIRTUAL TABLE */}
+        <div className="game-table">
+          
+          {phase === 'waiting' && (
+            <div className="center-action animate-pop">
+              <h2>Ready to play?</h2>
+              <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to 26 wins. 1 trick = 1 point.</p>
+              {(playingAs === 'ALL' || playingAs === 0) && (
+                <button className="btn-primary" onClick={() => socket.emit('START_GAME')}>Deal Cards</button>
               )}
             </div>
           )}
+
+          {phase !== 'waiting' && phase !== 'game_over' && (
+            <>
+              {/* OPPONENTS AREA */}
+              <div className="opponents-area">
+                {players.map((p, i) => {
+                  if (playingAs === i) return null;
+                  return (
+                    <div key={p.id} className={`opponent-card ${currentTurnIndex === i ? 'active-turn' : ''}`}>
+                      <h3>{p.name}</h3>
+                      <div className="stats" style={{fontWeight: 'bold', color: '#fff'}}>
+                        <span>Score: {p.score}</span>
+                      </div>
+                      <div className="stats">
+                        <span>Bid: {p.bid !== null ? p.bid : '?'}</span>
+                        <span>Won: {p.tricksWon}</span>
+                      </div>
+                      <div className="opponent-hand">
+                        {p.hand?.map((_, idx) => (
+                          <PlayingCard key={idx} faceDown={true} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* CENTER: THE TRICK */}
+              <div className="trick-area">
+                {currentTrick?.length === 0 && phase === 'playing' && (
+                  <div className="trick-placeholder">Waiting for {players[currentTurnIndex].name} to lead...</div>
+                )}
+                {currentTrick?.map((play, idx) => (
+                  <div key={idx} className="trick-card">
+                    <small>{players[play.playerIndex].name}</small>
+                    <PlayingCard card={play.card} faceDown={false} />
+                  </div>
+                ))}
+              </div>
+
+              {/* BOTTOM: CURRENT PLAYER (YOU) */}
+              {playingAs !== 'ALL' && (
+                <div className={`my-area ${isMyTurn ? 'my-turn-active' : ''}`}>
+                  <div className="my-stats">
+                    <h2>{players[playingAs].name} (You)</h2>
+                    <div className="my-scores">
+                      <span>Total Score: <strong>{players[playingAs].score}</strong></span>
+                      <span> | Bid: <strong>{players[playingAs].bid !== null ? players[playingAs].bid : '-'}</strong></span>
+                      <span> | Won: <strong>{players[playingAs].tricksWon}</strong></span>
+                    </div>
+                  </div>
+                  
+                  {/* Bidding Phase Form */}
+                  {phase === 'bidding' && isMyTurn && (
+                    <form onSubmit={handleBidSubmit} className="action-form animate-pop">
+                      <label style={{color: "white"}}>Enter your bid:</label>
+                      <input type="number" min="0" max="13" value={bidInput} onChange={(e) => setBidInput(e.target.value)} autoFocus />
+                      <button type="submit" className="btn-primary">Submit</button>
+                    </form>
+                  )}
+
+                  {/* Playing Phase - My Hand */}
+                  <div className="my-hand">
+                    {players[playingAs]?.hand?.map(card => {
+                      const amIPlaying = phase === 'playing' && isMyTurn;
+                      const canPlayCard = amIPlaying ? checkPlayable(players[playingAs].hand, card, currentTrick) : false;
+                      const isDimmed = phase === 'playing' && (!isMyTurn || !canPlayCard);
+
+                      return (
+                        <PlayingCard 
+                          key={card.id} 
+                          card={card} 
+                          faceDown={false} 
+                          isPlayable={canPlayCard}
+                          isDimmed={isDimmed}
+                          onClick={() => handlePlayCard(card.id)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* SCORING OVERLAY */}
           {phase === 'scoring' && (
-            <div className="scoring-action">
-              <p>Select ✓ or × for your profile.</p>
-              <button className={`submit-round-btn ${roundOutcomes.includes(null) ? 'btn-waiting' : ''}`} onClick={handleScoreSubmit}>
-                {roundOutcomes.includes(null) ? 'Waiting on players...' : `Finalize Round ${currentRound}`}
-              </button>
+            <div className="center-action animate-pop">
+              <h2>Round {round} Over!</h2>
+              {gameState.overtimeActive && (
+                <p style={{color: '#f1c40f', fontWeight: 'bold', margin: '12px 0'}}>
+                  ⚠️ Tie-Breaker Active! (Overtime Round {gameState.overtimeRound}/3)
+                </p>
+              )}
+              <p style={{marginBottom: '16px'}}>Scores have been calculated.</p>
+              {(playingAs === 'ALL' || playingAs === 0) && (
+                <button className="btn-primary" onClick={() => socket.emit('NEXT_ROUND')}>Deal Round {round + 1}</button>
+              )}
             </div>
           )}
-        </section>
 
-        {/* --- SCOREBOARD WITH SCREENSHOT REF --- */}
-        <div className="table-header-row">
-          <h2>Scoreboard</h2>
-          {history.length > 0 && (
-            <button className="screenshot-btn" onClick={handleScreenshot}>📸 Save Image</button>
+          {/* GAME OVER SCREEN */}
+          {phase === 'game_over' && (
+            <div className="center-action animate-pop">
+              <h1 style={{color: '#f1c40f', fontSize: '2.5rem', margin: '0 0 16px 0'}}>Game Over!</h1>
+              <div style={{background: 'rgba(0,0,0,0.6)', padding: '20px', borderRadius: '12px', marginBottom: '24px', textAlign: 'left', border: '1px solid #f1c40f'}}>
+                {[...players].sort((a, b) => b.score - a.score).map((p, index) => (
+                  <div key={p.id} style={{fontSize: '1.2rem', marginBottom: '8px', color: index === 0 ? '#4ade80' : 'white'}}>
+                    {index === 0 ? '🏆 ' : ''}{p.name}: <strong>{p.score} pts</strong>
+                  </div>
+                ))}
+              </div>
+              {(playingAs === 'ALL' || playingAs === 0) && (
+                <button className="btn-primary" onClick={() => socket.emit('START_GAME')}>Play Again</button>
+              )}
+            </div>
           )}
         </div>
-        
-        <section className="table-container" ref={tableRef}>
-          <table className="score-table">
-            <thead>
-              <tr>
-                <th className="rnd-col">Round</th>
-                {players.map(p => <th key={p.id}>{p.name}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {history.map((row, rIndex) => (
-                <tr key={row.round}>
-                  <td className="rnd-col"><strong>R{row.round}</strong></td>
-                  {row.playerResults.map((res, pIndex) => (
-                    <td key={pIndex} className={`score-cell ${res.change >= 0 ? 'cell-success' : 'cell-fail'}`}>
-                      <EditableScore 
-                        roundIndex={rIndex} 
-                        playerIndex={pIndex} 
-                        initialValue={res.change} 
-                        isHost={playingAs === 'ALL'} 
-                      />
-                      <small className="score-details">
-                        Bid: {res.bid} &nbsp;|&nbsp; Total: {res.totalAfter}
-                      </small>
-                    </td>
-                  ))}
+
+        {/* RESTORED SCOREBOARD TABLE */}
+        {history?.length > 0 && (
+          <div className="table-container" style={{ marginTop: '32px', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+            <div className="table-header-row" style={{ background: '#1e293b', borderBottom: '1px solid #334155' }}>
+              <h2 style={{ color: 'white' }}>Round History</h2>
+            </div>
+            <table className="score-table" style={{ background: '#1e293b' }}>
+              <thead>
+                <tr>
+                  <th className="rnd-col" style={{ color: '#94a3b8' }}>Rnd</th>
+                  {players.map(p => <th key={p.id} style={{ color: '#94a3b8' }}>{p.name}</th>)}
                 </tr>
-              ))}
-              <tr className="totals-row">
-                <td className="rnd-col"><strong>Total</strong></td>
-                {players.map(p => <td key={p.id}><strong>{p.score}</strong></td>)}
-              </tr>
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {history.map((row) => (
+                  <tr key={row.round}>
+                    <td className="rnd-col" style={{ color: 'white', borderBottom: '1px solid #334155' }}><strong>R{row.round}</strong></td>
+                    {row.playerResults.map((res, i) => (
+                      <td key={i} className={`score-cell ${res.change > 0 ? 'cell-success' : 'cell-fail'}`} style={{ borderBottom: '1px solid #334155' }}>
+                        <div className="score-change">{res.change > 0 ? `+${res.change}` : res.change}</div>
+                        <small className="score-details" style={{ display: 'block', color: '#94a3b8' }}>
+                          Bid: {res.bid} | Won: {res.won}
+                        </small>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
       </div>
     </div>
   );
