@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
 
-const SOCKET_URL = 'http://localhost:4000';
+const SOCKET_URL = 'https://cardscorecalculator.onrender.com:4000';
 const socket = io(SOCKET_URL);
 
 // Special Component to prevent cursor jumping while editing names in real-time
