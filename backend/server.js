@@ -46,6 +46,23 @@ io.on('connection', (socket) => {
     }
     io.emit('STATE_UPDATE', gameState);
   });
+  // Edit past scores (Host Only)
+  socket.on('EDIT_SCORE', ({ roundIndex, playerIndex, newChange }) => {
+    // 1. Update the specific round's change
+    gameState.history[roundIndex].playerResults[playerIndex].change = newChange;
+    
+    // 2. Recalculate all totals for this player from round 1 to the end
+    let runningTotal = 0;
+    for (let i = 0; i < gameState.history.length; i++) {
+      runningTotal += gameState.history[i].playerResults[playerIndex].change;
+      gameState.history[i].playerResults[playerIndex].totalAfter = runningTotal;
+    }
+    
+    // 3. Update the player's grand total
+    gameState.players[playerIndex].score = runningTotal;
+    
+    io.emit('STATE_UPDATE', gameState);
+  });
 
   // New Listener: Instantly sync ✓ and × clicks across all screens
   socket.on('TOGGLE_OUTCOME', ({ index, made }) => {
