@@ -4,10 +4,36 @@ import toast, { Toaster } from 'react-hot-toast';
 import { Spade, User, Trophy, LogIn, Crown, Play, Swords } from 'lucide-react';
 import './App.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL 
-// || 'http://localhost:4000';
-// import.meta.env.VITE_SOCKET_URL 
+// --- AUDIO SYNTHESIZER UTILITY ---
+const playSound = (type) => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
 
+    if (type === 'click') {
+      osc.frequency.setValueAtTime(400, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.04);
+    } else if (type === 'play') {
+      osc.frequency.setValueAtTime(250, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+    }
+  } catch (e) {
+    // Browser audio policy catch
+  }
+};
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
 const socket = io(SOCKET_URL);
 
 const checkPlayable = (hand, cardToPlay, trick) => {
@@ -78,6 +104,7 @@ export default function App() {
       setRoomId(roomId);
       setPlayingAs(seatIndex);
       setView('game');
+      playSound('click');
       toast.success('Joined Table successfully!');
     });
 
@@ -103,13 +130,17 @@ export default function App() {
   const handleCreateRoom = (e) => {
     e.preventDefault();
     if (!username || !roomName || !roomPassword) return toast.error('All fields required');
+    playSound('click');
     socket.emit('CREATE_ROOM', { roomName, password: roomPassword, username });
   };
 
   const handleJoinRoom = (targetRoomId) => {
     if (!username) return toast.error('Please set a username first!');
     const attemptPwd = prompt('Enter Room Password:');
-    if (attemptPwd) socket.emit('JOIN_ROOM', { roomId: targetRoomId, password: attemptPwd, username });
+    if (attemptPwd) {
+      playSound('click');
+      socket.emit('JOIN_ROOM', { roomId: targetRoomId, password: attemptPwd, username });
+    }
   };
 
   if (view === 'lobby') {
@@ -130,7 +161,7 @@ export default function App() {
               <form onSubmit={handleCreateRoom} className="create-form">
                 <input type="text" placeholder="Room Name" value={roomName} onChange={(e) => setRoomName(e.target.value)} className="lobby-input" />
                 <input type="password" placeholder="Password" value={roomPassword} onChange={(e) => setRoomPassword(e.target.value)} className="lobby-input" />
-                <button type="submit" className="btn-primary" style={{width: '100%'}}>Create Room</button>
+                <button type="submit" className="btn-primary" style={{width: '100%'}} onClick={() => playSound('click')}>Create Room</button>
               </form>
             </div>
 
@@ -164,11 +195,13 @@ export default function App() {
   const handleBidSubmit = (e) => {
     e.preventDefault();
     if (bidInput === '' || isNaN(bidInput)) return;
+    playSound('click');
     socket.emit('SUBMIT_BID', { roomId, index: currentTurnIndex, bid: parseInt(bidInput, 10) });
   };
 
   const handlePlayCard = (cardId) => {
     if (!isMyTurn || phase !== 'playing' || currentTrick.length >= 4) return;
+    playSound('play');
     socket.emit('PLAY_CARD', { roomId, playerIndex: playingAs, cardId });
   };
 
@@ -202,7 +235,7 @@ export default function App() {
               <h2>Waiting for Players ({players.filter(p => p.socketId).length}/4)</h2>
               <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to 26 wins. 1 trick = 1 point.</p>
               {playingAs === 0 && (
-                <button className="btn-primary flex-center" onClick={() => socket.emit('START_GAME', roomId)}>
+                <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>
                   <Play size={18} style={{marginRight: '8px'}} /> Deal Cards
                 </button>
               )}
@@ -297,7 +330,7 @@ export default function App() {
                   <form onSubmit={handleBidSubmit} className="action-form animate-pop">
                     <label style={{color: "white"}}>Enter your bid:</label>
                     <input type="number" min="0" max="13" value={bidInput} onChange={(e) => setBidInput(e.target.value)} autoFocus />
-                    <button type="submit" className="btn-primary">Submit</button>
+                    <button type="submit" className="btn-primary" onClick={() => playSound('click')}>Submit</button>
                   </form>
                 )}
 
@@ -326,7 +359,7 @@ export default function App() {
               {gameState.overtimeActive && <p style={{color: '#f1c40f', fontWeight: 'bold', margin: '12px 0'}}>⚠️ Tie-Breaker Active! (Overtime {gameState.overtimeRound}/3)</p>}
               <p style={{marginBottom: '16px'}}>Scores have been calculated.</p>
               {playingAs === 0 && (
-                <button className="btn-primary flex-center" onClick={() => socket.emit('NEXT_ROUND', roomId)}>
+                <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('NEXT_ROUND', roomId); }}>
                   <Play size={18} style={{marginRight: '8px'}} /> Deal Round {round + 1}
                 </button>
               )}
@@ -344,7 +377,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {playingAs === 0 && <button className="btn-primary" onClick={() => socket.emit('START_GAME', roomId)}>Play Again</button>}
+              {playingAs === 0 && <button className="btn-primary" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>Play Again</button>}
             </div>
           )}
         </div>

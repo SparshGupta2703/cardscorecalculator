@@ -284,7 +284,7 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
 .btn-secondary { background: transparent; color: #38bdf8; border: 2px solid #38bdf8; padding: 6px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
 .btn-secondary:hover { background: #38bdf8; color: #0f172a; }
 
-/* --- MOBILE ADJUSTMENTS --- */
+/* --- MOBILE ADJUSTMENTS & BIGGER CARDS --- */
 @media (max-width: 768px) {
   .lobby-grid { grid-template-columns: 1fr; }
   header { flex-direction: column; gap: 8px; align-items: flex-start; padding: 12px; }
@@ -292,41 +292,44 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   
   .game-table { border-width: 4px; padding: 8px; min-height: 65vh;}
   
-  /* SHRINK CARDS FOR PHONES */
-  .card { width: 36px; height: 52px; font-size: 0.65rem; padding: 2px; border-radius: 4px; }
-  .card-center { font-size: 1rem; }
+  /* BIGGER MOBILE CARDS (Up from 36px to 55px for easy tapping) */
+  .card { width: 55px; height: 80px; font-size: 0.9rem; padding: 3px; border-radius: 6px; }
+  .card-center { font-size: 1.5rem; }
   
-  /* Tighter overlap for shrunken cards */
-  .stacked-cards .card { margin-left: -22px; }
-  .my-stacked-cards .card { margin-left: -18px; }
+  /* Horizontal scrolling hand so big cards never break layout */
+  .my-hand {
+    display: flex;
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding: 10px 4px;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .my-stacked-cards .card { 
+    margin-left: -30px; /* Comfortable overlap for bigger mobile cards */
+  }
+  .my-stacked-cards .card:first-child { margin-left: 0; }
 
   .game-table-grid {
-    grid-template-columns: 70px 1fr 70px;
+    grid-template-columns: 65px 1fr 65px;
     grid-template-rows: auto 1fr auto;
-    gap: 6px;
+    gap: 4px;
   }
   
-  .pos-top { min-width: 130px; }
+  .pos-top { min-width: 120px; }
+  .stats-col, .stats-row { font-size: 0.55rem; gap: 2px; }
+  .opponent-card h3 { font-size: 0.7rem; margin-bottom: 2px;}
+  .opponent-card { padding: 4px 2px; }
   
-  .stats-col, .stats-row { font-size: 0.6rem; gap: 4px; }
-  .opponent-card h3 { font-size: 0.75rem; margin-bottom: 2px;}
-  .opponent-card { padding: 6px 2px; }
+  .vertical-stack .card { margin-top: -30px; width: 28px; height: 42px; font-size: 0.5rem; }
+  .trick-area { min-height: 90px; gap: 6px; margin: 6px 0; }
   
-  .vertical-stack .card { margin-top: -36px; } /* Tighter vertical overlap */
+  .my-area { padding: 8px 6px; }
+  .my-stats { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 6px; padding-bottom: 2px;}
+  .my-stats h2 { font-size: 0.9rem; }
+  .my-scores { font-size: 0.7rem; gap: 4px; }
   
-  .trick-area { min-height: 90px; gap: 8px; margin: 10px 0; }
-  
-  .my-area { padding: 10px 8px; }
-  .my-stats { flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 8px; padding-bottom: 4px;}
-  .my-stats h2 { font-size: 1rem; }
-  .my-scores { font-size: 0.75rem; gap: 4px; }
-  
-  .action-form input { width: 50px; padding: 6px; font-size: 1rem; }
-  .btn-primary { padding: 8px 16px; font-size: 0.9rem; }
-}
-
-@media (max-width: 400px) {
-  .my-stacked-cards .card { margin-left: -22px; } 
-  .vertical-stack .card { margin-top: -40px; }
-  .card { width: 32px; height: 46px; font-size: 0.6rem; }
+  .action-form input { width: 50px; padding: 4px; font-size: 0.9rem; }
+  .btn-primary { padding: 6px 12px; font-size: 0.85rem; }
 }
