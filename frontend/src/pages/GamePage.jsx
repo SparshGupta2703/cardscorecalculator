@@ -3,13 +3,15 @@ import { socket } from '../socket/socketClient';
 import { playSound } from '../utils/audio';
 import { checkPlayable } from '../utils/gameRules';
 import PlayingCard from '../components/PlayingCard';
-import { Spade, User, Trophy, Crown, Play } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Spade, User, Trophy, Crown, Play, Camera } from 'lucide-react';
 
 export default function GamePage({ gameState, roomId, playingAs }) {
   const [bidInput, setBidInput] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   
   if (!gameState) return <div className="loading">Entering Table...</div>;
-  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history } = gameState;
+  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history, roomPassword, uploadedFaces, customFaceMap } = gameState;
   const isMyTurn = phase !== 'waiting' && playingAs === currentTurnIndex;
 
   const handleBidSubmit = (e) => {
@@ -24,6 +26,38 @@ export default function GamePage({ gameState, roomId, playingAs }) {
     if (!isMyTurn || phase !== 'playing' || currentTrick.length >= 4) return;
     playSound('play');
     socket.emit('PLAY_CARD', { roomId, playerIndex: playingAs, cardId });
+  };
+
+  // --- SECURE BACKEND UPLOAD LOGIC ---
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsUploading(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      // Send the image to our Node.js backend using Multer!
+      const BACKEND_URL = import.meta.env.VITE_SOCKET_URL
+      const res = await fetch(`${BACKEND_URL}/api/upload-face`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await res.json();
+      
+      if (data.secure_url) {
+        socket.emit('UPLOAD_FACE', { roomId, imageUrl: data.secure_url });
+        toast.success("Selfie added to the deck!");
+      } else {
+        toast.error("Upload failed on server.");
+      }
+    } catch (err) {
+      toast.error("Upload connection failed");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const getRelativePosition = (playerIndex) => {
@@ -47,16 +81,41 @@ export default function GamePage({ gameState, roomId, playingAs }) {
           </div>
         </div>
         <div className="header-right">
-          <p className="round-badge">Round {round}</p>
-          <div className="spades-status">Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
+          {/* PASSWORD VISIBLE HERE */}
+          <p className="round-badge">Password: <span style={{color: '#facc15'}}>{roomPassword}</span></p>
+          <div className="spades-status">Round {round} | Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
         </div>
       </header>
 
       <div className="game-table">
         {phase === 'waiting' && (
-          <div className="center-action animate-pop">
+          <div className="center-action animate-pop" style={{ maxWidth: '450px' }}>
             <h2>Waiting for Players ({players.filter(p => p.socketId).length}/4)</h2>
             <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to 26 wins. 1 trick = 1 point.</p>
+            
+            {/* SELFIE UPLOAD UI */}
+            <div style={{ background: 'rgba(0,0,0,0.5)', padding: '16px', borderRadius: '12px', marginBottom: '20px' }}>
+              <p style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: '#cbd5e1' }}>
+                <Camera size={16} className="inline-icon" /> Optional: Add up to 4 custom faces for J, Q, K, A!
+              </p>
+              
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '12px' }}>
+                {uploadedFaces.map((url, i) => (
+                  <img key={i} src={url} alt="face" style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #38bdf8' }} />
+                ))}
+                {[...Array(Math.max(0, 4 - uploadedFaces.length))].map((_, i) => (
+                  <div key={`empty-${i}`} style={{ width: '45px', height: '45px', borderRadius: '50%', border: '2px dashed #475569', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '0.8rem' }}>?</div>
+                ))}
+              </div>
+
+              {uploadedFaces.length < 4 && (
+                <label className="btn-secondary" style={{ display: 'inline-block', cursor: 'pointer' }}>
+                  {isUploading ? 'Uploading...' : 'Upload Selfie'}
+                  <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} disabled={isUploading} />
+                </label>
+              )}
+            </div>
+
             {playingAs === 0 && (
               <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>
                 <Play size={18} style={{marginRight: '8px'}} /> Deal Cards
@@ -67,56 +126,52 @@ export default function GamePage({ gameState, roomId, playingAs }) {
 
         {phase !== 'waiting' && phase !== 'game_over' && (
           <div className="game-table-grid">
-            {/* Top Opponent */}
+            {/* PASS customFaceMap TO ALL PlayingCard COMPONENTS */}
             {(() => {
               const topP = players[(playingAs + 2) % 4];
               return (
                 <div className={`opponent-card pos-top ${currentTurnIndex === topP.id ? 'active-turn' : ''} ${!topP.socketId ? 'dimmed-card' : ''}`}>
                   <h3>{topP.name}</h3>
                   <div className="stats-row"><span>Score: {topP.score}</span> | <span>Bid: {topP.bid !== null ? topP.bid : '?'}</span> | <span>Won: {topP.tricksWon}</span></div>
-                  <div className="opponent-hand stacked-cards">{topP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} />)}</div>
+                  <div className="opponent-hand stacked-cards">{topP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} customFaceMap={customFaceMap} />)}</div>
                 </div>
               );
             })()}
 
-            {/* Left Opponent */}
             {(() => {
               const leftP = players[(playingAs + 1) % 4];
               return (
                 <div className={`opponent-card pos-left ${currentTurnIndex === leftP.id ? 'active-turn' : ''} ${!leftP.socketId ? 'dimmed-card' : ''}`}>
                   <h3>{leftP.name}</h3>
                   <div className="stats-col"><span>Scr: {leftP.score}</span><span>Bid: {leftP.bid !== null ? leftP.bid : '?'}</span><span>Won: {leftP.tricksWon}</span></div>
-                  <div className="opponent-hand vertical-stack">{leftP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} />)}</div>
+                  <div className="opponent-hand vertical-stack">{leftP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} customFaceMap={customFaceMap} />)}</div>
                 </div>
               );
             })()}
 
-            {/* Center Trick Area */}
             <div className="trick-area pos-center plus-layout">
               {currentTrick?.length === 0 && phase === 'playing' && <div className="trick-placeholder">Waiting for {players[currentTurnIndex].name} to lead...</div>}
               {currentTrick?.map((play, idx) => (
                 <div key={idx} className={`absolute-trick ${getRelativePosition(play.playerIndex)}`} style={{ zIndex: idx + 1 }}>
                   <div className="trick-card-animated">
                     <small className="trick-name-label">{players[play.playerIndex].name}</small>
-                    <PlayingCard card={play.card} faceDown={false} />
+                    <PlayingCard card={play.card} faceDown={false} customFaceMap={customFaceMap} />
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Right Opponent */}
             {(() => {
               const rightP = players[(playingAs + 3) % 4];
               return (
                 <div className={`opponent-card pos-right ${currentTurnIndex === rightP.id ? 'active-turn' : ''} ${!rightP.socketId ? 'dimmed-card' : ''}`}>
                   <h3>{rightP.name}</h3>
                   <div className="stats-col"><span>Scr: {rightP.score}</span><span>Bid: {rightP.bid !== null ? rightP.bid : '?'}</span><span>Won: {rightP.tricksWon}</span></div>
-                  <div className="opponent-hand vertical-stack">{rightP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} />)}</div>
+                  <div className="opponent-hand vertical-stack">{rightP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} customFaceMap={customFaceMap} />)}</div>
                 </div>
               );
             })()}
 
-            {/* My Area (Bottom) */}
             <div className={`my-area pos-bottom ${isMyTurn ? 'my-turn-active' : ''}`}>
               <div className="my-stats">
                 <h2>{players[playingAs]?.name || 'Spectator'} (You)</h2>
@@ -140,7 +195,7 @@ export default function GamePage({ gameState, roomId, playingAs }) {
                   const amIPlaying = phase === 'playing' && isMyTurn;
                   const canPlayCard = amIPlaying ? checkPlayable(players[playingAs].hand, card, currentTrick) : false;
                   const isDimmed = phase === 'playing' && (!isMyTurn || !canPlayCard);
-                  return <PlayingCard key={card.id} card={card} faceDown={false} isPlayable={canPlayCard} isDimmed={isDimmed} onClick={() => handlePlayCard(card.id)} />;
+                  return <PlayingCard key={card.id} card={card} faceDown={false} isPlayable={canPlayCard} isDimmed={isDimmed} onClick={() => handlePlayCard(card.id)} customFaceMap={customFaceMap} />;
                 })}
               </div>
             </div>
@@ -156,6 +211,7 @@ export default function GamePage({ gameState, roomId, playingAs }) {
             {playingAs === 0 && <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('NEXT_ROUND', roomId); }}><Play size={18} style={{marginRight: '8px'}} /> Deal Round {round + 1}</button>}
           </div>
         )}
+        
         {phase === 'game_over' && (
           <div className="center-action animate-pop">
             <h1 style={{color: '#f1c40f', fontSize: '2.5rem', margin: '0 0 16px 0'}}>Game Over!</h1>

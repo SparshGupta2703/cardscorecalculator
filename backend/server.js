@@ -1,5 +1,7 @@
+require('dotenv').config(); // Add this line at the very top!
 const express = require('express');
 const http = require('http');
+
 const { Server } = require('socket.io');
 const cors = require('cors');
 const roomRoutes = require('./routes/roomRoutes');

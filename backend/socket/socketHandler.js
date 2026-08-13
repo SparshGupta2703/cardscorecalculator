@@ -21,25 +21,62 @@ module.exports = (io) => {
   io.on('connection', (socket) => {
     socket.emit('ROOM_LIST', getPublicRooms());
 
-    socket.on('CREATE_ROOM', ({ roomName, password, username }) => {
+   socket.on('CREATE_ROOM', ({ roomName, password, username }) => {
       const roomId = Math.random().toString(36).substring(2, 9);
-      const sessionId = generateSessionId(); // Create secret token
+      const sessionId = generateSessionId(); 
       
       const newRoom = roomRepo.createRoom(roomId, {
-        id: roomId, name: roomName, password, gameState: gameService.createInitialGameState()
+        // ADDED: Pass password into createInitialGameState
+        id: roomId, name: roomName, password, gameState: gameService.createInitialGameState(password)
       });
       
       newRoom.gameState.players[0].name = username;
       newRoom.gameState.players[0].socketId = socket.id;
-      newRoom.gameState.players[0].sessionId = sessionId; // Lock seat to token
+      newRoom.gameState.players[0].sessionId = sessionId; 
       
       socket.join(roomId);
-      // Send the token back to the creator
       socket.emit('ROOM_JOINED', { roomId, seatIndex: 0, sessionId });
       io.emit('ROOM_LIST', getPublicRooms());
       broadcastState(roomId);
     });
 
+    // --- NEW: HANDLE UPLOADED SELFIES ---
+    socket.on('UPLOAD_FACE', ({ roomId, imageUrl }) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
+      // Cap at 4 faces total
+      if (room.gameState.uploadedFaces.length < 4) {
+        room.gameState.uploadedFaces.push(imageUrl);
+        broadcastState(roomId);
+      }
+    });
+
+    socket.on('START_GAME', (roomId) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
+      
+      // --- NEW: RANDOMIZE FACES ---
+      const faces = [...room.gameState.uploadedFaces];
+      for (let i = faces.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [faces[i], faces[j]] = [faces[j], faces[i]];
+      }
+      
+      // Map random faces to Jack (11), Queen (12), King (13), Ace (14)
+      const faceRanks = [11, 12, 13, 14];
+      room.gameState.customFaceMap = {};
+      faces.forEach((url, i) => {
+        if (faceRanks[i]) room.gameState.customFaceMap[faceRanks[i]] = url;
+      });
+
+      room.gameState.round = 1;
+      room.gameState.overtimeRound = 0;
+      room.gameState.overtimeActive = false;
+      room.gameState.history = [];
+      room.gameState.players.forEach(p => p.score = 0);
+      gameService.dealCards(room.gameState);
+      broadcastState(roomId);
+    });
     socket.on('JOIN_ROOM', ({ roomId, password, username }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return socket.emit('ROOM_ERROR', 'Room not found.');
@@ -78,18 +115,7 @@ module.exports = (io) => {
       io.emit('ROOM_LIST', getPublicRooms());
       broadcastState(roomId);
     });
-    socket.on('START_GAME', (roomId) => {
-      const room = roomRepo.getRoom(roomId);
-      if (!room) return;
-      room.gameState.round = 1;
-      room.gameState.overtimeRound = 0;
-      room.gameState.overtimeActive = false;
-      room.gameState.history = [];
-      room.gameState.players.forEach(p => p.score = 0);
-      gameService.dealCards(room.gameState);
-      broadcastState(roomId);
-    });
-
+   
     socket.on('NEXT_ROUND', (roomId) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;

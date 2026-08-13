@@ -209,10 +209,11 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
 .action-form input { width: 70px; padding: 10px; text-align: center; font-size: 1.2rem; border-radius: 6px; font-weight: bold; border: 2px solid #38bdf8; background: #0f172a; color: white; outline: none;}
 
 /* --- THE PLAYING CARDS --- */
+/* --- THE PLAYING CARDS --- */
 .card {
   width: 70px; height: 100px; background: white; border-radius: 8px;
-  display: flex; flex-direction: column; justify-content: space-between;
-  padding: 4px; font-weight: bold; font-size: 1.1rem; 
+  /* Removed flex-box here since we are using absolute positioning now */
+  font-weight: bold; font-size: 1.1rem; 
   box-shadow: 0 4px 8px rgba(0,0,0,0.5);
   position: relative; user-select: none; transition: transform 0.2s ease;
   flex-shrink: 0;
@@ -220,9 +221,34 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
 .red-suit { color: #ef4444; }
 .black-suit { color: #0f172a; }
 
-.card-top { text-align: left; line-height: 1; }
-.card-center { text-align: center; font-size: 2rem; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
-.card-bottom { text-align: right; line-height: 1; transform: rotate(180deg); }
+/* Pin strictly to Top-Left */
+.card-top { 
+  position: absolute; 
+  top: 4px; 
+  left: 4px; 
+  text-align: center; 
+  line-height: 1.1; 
+}
+
+/* Pin strictly to Dead Center */
+.card-center { 
+  text-align: center; 
+  font-size: 2rem; 
+  position: absolute; 
+  top: 50%; 
+  left: 50%; 
+  transform: translate(-50%, -50%); 
+}
+
+/* Pin strictly to Bottom-Right and flip upside down */
+.card-bottom { 
+  position: absolute; 
+  bottom: 4px; 
+  right: 4px; 
+  text-align: center; 
+  line-height: 1.1; 
+  transform: rotate(180deg); 
+}
 
 /* Card Back Pattern */
 .card.face-down {

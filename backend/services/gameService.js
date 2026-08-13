@@ -2,8 +2,12 @@ const SUITS = ['hearts', 'clubs', 'diamonds', 'spades'];
 const RANKS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 const SUIT_ORDER = { hearts: 1, clubs: 2, diamonds: 3, spades: 4 };
 
-exports.createInitialGameState = () => {
+// ADDED: Password parameter and face tracking arrays
+exports.createInitialGameState = (password) => {
   return {
+    roomPassword: password, 
+    uploadedFaces: [], 
+    customFaceMap: {}, 
     players: [
       { id: 0, name: 'Waiting...', socketId: null, sessionId: null, score: 0, hand: [], bid: null, tricksWon: 0 },
       { id: 1, name: 'Waiting...', socketId: null, sessionId: null, score: 0, hand: [], bid: null, tricksWon: 0 },
@@ -20,6 +24,7 @@ exports.createInitialGameState = () => {
     history: []
   };
 };
+
 exports.generateDeck = () => {
   let deck = [];
   for (let suit of SUITS) {
