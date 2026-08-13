@@ -21,11 +21,11 @@ body {
   flex-direction: column;
 }
 
-/* Utilities */
+/* --- UTILITIES --- */
 .inline-icon { vertical-align: text-bottom; margin-right: 6px; }
 .flex-center { display: flex; align-items: center; justify-content: center; }
 
-/* Header */
+/* --- HEADER --- */
 header {
   display: flex; align-items: center; justify-content: space-between;
   background: #1e293b; padding: 16px 24px; border-radius: 12px;
@@ -40,14 +40,14 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
 .round-badge { margin: 0 0 4px 0; font-weight: bold; color: #38bdf8; font-size: 1.2rem; }
 .spades-status { font-size: 0.9rem; color: #94a3b8; }
 
-/* Alerts & UI Animations */
+/* --- ALERTS & UI ANIMATIONS --- */
 .animate-pop { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 @keyframes popIn { 
   0% { transform: scale(0.95); opacity: 0; } 
   100% { transform: scale(1); opacity: 1; } 
 }
 
-/* Buttons */
+/* --- BUTTONS --- */
 .btn-primary {
   background: linear-gradient(135deg, #0ea5e9, #2563eb); color: white; border: none; 
   padding: 12px 24px; font-size: 1.1rem; font-weight: bold; border-radius: 8px; 
@@ -80,24 +80,32 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
 /* --- CSS GRID TABLE LAYOUT --- */
 .game-table-grid {
   display: grid;
-  grid-template-columns: 200px 1fr 200px;
+  grid-template-columns: minmax(100px, 140px) 1fr minmax(100px, 140px);
   grid-template-rows: auto 1fr auto;
   grid-template-areas:
     ". top-opp ."
     "left-opp trick-area right-opp"
     "bottom-me bottom-me bottom-me";
-  gap: 20px;
+  gap: 10px;
   width: 100%;
-  height: 100%;
+  flex-grow: 1;
+  align-items: center; /* Locks grid vertically */
 }
 
-.pos-top { grid-area: top-opp; margin: 0 auto; min-width: 300px; }
+.pos-top { grid-area: top-opp; margin: 0 auto; min-width: 250px; }
 .pos-left { grid-area: left-opp; margin: auto 0; }
 .pos-right { grid-area: right-opp; margin: auto 0; }
-.pos-center { grid-area: trick-area; }
 .pos-bottom { grid-area: bottom-me; }
+.pos-center { 
+  grid-area: trick-area; 
+  justify-self: center; /* Locks horizontal alignment to the center */
+  align-self: center;   /* Locks vertical alignment to the center */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 
-/* Opponent Panel Styling */
+/* --- OPPONENT PANELS --- */
 .opponent-card {
   background: rgba(0, 0, 0, 0.5); 
   padding: 12px; 
@@ -106,13 +114,11 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   border: 2px solid transparent;
   transition: all 0.3s;
 }
-
 .opponent-card.active-turn { 
   border-color: #facc15; 
   background: rgba(250, 204, 21, 0.15); 
   box-shadow: 0 0 15px rgba(250, 204, 21, 0.2); 
 }
-
 .opponent-card h3 { 
   margin: 0 0 8px 0; 
   font-size: 1rem; 
@@ -121,44 +127,69 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   overflow: hidden; 
   text-overflow: ellipsis;
 }
+.stats-row { font-size: 0.85rem; color: #cbd5e1; display: flex; justify-content: center; gap: 8px; margin-bottom: 12px; }
+.stats-col { font-size: 0.85rem; color: #cbd5e1; display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 
-.stats-row { 
-  font-size: 0.85rem; 
-  color: #cbd5e1; 
-  display: flex; 
-  justify-content: center; 
-  gap: 8px; 
-  margin-bottom: 12px; 
+/* --- PLUS-SHAPE TRICK AREA (CENTER) --- */
+.plus-layout {
+  position: relative;
+  width: 250px; 
+  height: 250px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.15); /* Faint felt circle to define play zone */
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.3);
+  flex-shrink: 0; /* Prevents center circle from squishing */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.stats-col {
-  font-size: 0.85rem; 
-  color: #cbd5e1; 
-  display: flex; 
-  flex-direction: column; 
-  gap: 4px; 
-  margin-bottom: 12px;
+.trick-placeholder {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%; text-align: center;
+  color: rgba(255,255,255,0.4); font-style: italic; font-size: 1.1rem;
 }
 
-/* TRICK AREA (CENTER) */
-.trick-area {
-  display: flex; justify-content: center; align-items: center; gap: 12px;
-  min-height: 140px; margin: 20px 0; flex-wrap: wrap;
+.absolute-trick {
+  position: absolute;
+  width: 70px; /* Must match .card width */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-.trick-placeholder { color: rgba(255,255,255,0.4); font-style: italic; font-size: 1.1rem; text-align: center;}
 
-.trick-card { 
-  text-align: center; 
-  animation: dropCard 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+.trick-card-animated {
+  animation: dropCard 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
-.trick-card small { display: block; margin-bottom: 6px; font-weight: bold; color: #facc15; text-shadow: 0 2px 4px rgba(0,0,0,0.8);}
+
+.trick-name-label {
+  background: rgba(0, 0, 0, 0.8);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: #facc15;
+}
+
+/* Absolute Positioning for the Plus Shape */
+.pos-bottom-trick { bottom: 10px; left: 50%; margin-left: -35px; }
+.pos-top-trick { top: 10px; left: 50%; margin-left: -35px; }
+.pos-left-trick { left: 10px; top: 50%; margin-top: -65px; }
+.pos-right-trick { right: 10px; top: 50%; margin-top: -65px; }
 
 @keyframes dropCard {
-  0% { transform: translateY(-30px) scale(1.1); opacity: 0; }
+  0% { transform: translateY(-20px) scale(1.1); opacity: 0; }
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 
-/* MY AREA (BOTTOM) */
+/* --- MY AREA (BOTTOM) --- */
 .my-area {
   background: rgba(0, 0, 0, 0.7); padding: 16px 12px; border-radius: 16px;
   border: 2px solid transparent; transition: all 0.3s;
@@ -209,17 +240,10 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   align-items: center;
   margin-top: 10px;
 }
-
-.stacked-cards .card {
-  margin-left: -50px; 
-  box-shadow: -4px 0 8px rgba(0,0,0,0.4);
-}
-
+.stacked-cards .card { margin-left: -50px; box-shadow: -4px 0 8px rgba(0,0,0,0.4); }
 .stacked-cards .card:first-child { margin-left: 0; }
 
-.my-stacked-cards .card {
-  margin-left: -40px; 
-}
+.my-stacked-cards .card { margin-left: -40px; }
 .my-stacked-cards .card:first-child { margin-left: 0; }
 
 /* Vertical Card Stacking for Left & Right players */
@@ -229,16 +253,12 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   align-items: center;
   padding: 10px 0;
 }
-
 .vertical-stack .card {
   margin-left: 0 !important; 
-  margin-top: -75px;         
+  margin-top: -80px; /* Tight overlap to protect PC layout */
   box-shadow: 0 -4px 8px rgba(0,0,0,0.4);
 }
-
-.vertical-stack .card:first-child {
-  margin-top: 0;
-}
+.vertical-stack .card:first-child { margin-top: 0; }
 
 /* Bright Playable Hover with z-index pop */
 .card.playable { cursor: pointer; }
@@ -249,11 +269,7 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
 }
 
 /* Dimmed Non-Playable State */
-.dimmed-card { 
-  filter: brightness(0.4) grayscale(0.6); 
-  opacity: 0.9;
-  cursor: not-allowed; 
-}
+.dimmed-card { filter: brightness(0.4) grayscale(0.6); opacity: 0.9; cursor: not-allowed; }
 
 /* --- SCOREBOARD TABLE --- */
 .table-container { margin-top: 32px; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }
@@ -284,19 +300,28 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
 .btn-secondary { background: transparent; color: #38bdf8; border: 2px solid #38bdf8; padding: 6px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
 .btn-secondary:hover { background: #38bdf8; color: #0f172a; }
 
-/* --- MOBILE ADJUSTMENTS & BIGGER CARDS --- */
+
+/* =========================================================================
+   MOBILE ADJUSTMENTS & SCALING
+========================================================================= */
 @media (max-width: 768px) {
   .lobby-grid { grid-template-columns: 1fr; }
   header { flex-direction: column; gap: 8px; align-items: flex-start; padding: 12px; }
   .header-right { text-align: left; width: 100%; display: flex; justify-content: space-between; align-items: center;}
   
-  .game-table { border-width: 4px; padding: 8px; min-height: 65vh;}
+  .game-table { border-width: 4px; padding: 8px; min-height: 65vh; }
   
-  /* BIGGER MOBILE CARDS (Up from 36px to 55px for easy tapping) */
+  /* OVERALL MOBILE GRID */
+  .game-table-grid {
+    grid-template-columns: 75px 1fr 75px; 
+    gap: 4px;
+  }
+  
+  /* BIGGER MOBILE CARDS FOR TAPPING */
   .card { width: 55px; height: 80px; font-size: 0.9rem; padding: 3px; border-radius: 6px; }
   .card-center { font-size: 1.5rem; }
   
-  /* Horizontal scrolling hand so big cards never break layout */
+  /* HORIZONTAL SCROLL FOR MY HAND */
   .my-hand {
     display: flex;
     overflow-x: auto;
@@ -305,26 +330,30 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
     max-width: 100%;
     -webkit-overflow-scrolling: touch;
   }
-
-  .my-stacked-cards .card { 
-    margin-left: -30px; /* Comfortable overlap for bigger mobile cards */
-  }
-  .my-stacked-cards .card:first-child { margin-left: 0; }
-
-  .game-table-grid {
-    grid-template-columns: 65px 1fr 65px;
-    grid-template-rows: auto 1fr auto;
-    gap: 4px;
-  }
+  .my-stacked-cards .card { margin-left: -30px; }
   
+  /* OPPONENTS VERTICAL & TOP STACKS */
   .pos-top { min-width: 120px; }
   .stats-col, .stats-row { font-size: 0.55rem; gap: 2px; }
   .opponent-card h3 { font-size: 0.7rem; margin-bottom: 2px;}
   .opponent-card { padding: 4px 2px; }
   
-  .vertical-stack .card { margin-top: -30px; width: 28px; height: 42px; font-size: 0.5rem; }
-  .trick-area { min-height: 90px; gap: 6px; margin: 6px 0; }
+  .vertical-stack .card { width: 40px; height: 60px; font-size: 0.7rem; margin-top: -45px; }
+  .vertical-stack .card-center { font-size: 1rem; }
+
+  /* PLUS-SHAPE TRICK LAYOUT SCALED FOR MOBILE */
+  .plus-layout { width: 170px; height: 170px; }
+  .absolute-trick { width: 55px; } /* Must match mobile .card width */
   
+  .pos-bottom-trick { bottom: 5px; margin-left: -27.5px; }
+  .pos-top-trick { top: 5px; margin-left: -27.5px; }
+  .pos-left-trick { left: 5px; margin-top: -40px; }
+  .pos-right-trick { right: 5px; margin-top: -40px; }
+  
+  .trick-name-label { font-size: 0.65rem; padding: 1px 4px; }
+  .trick-placeholder { font-size: 0.9rem; }
+  
+  /* MY AREA & STATS */
   .my-area { padding: 8px 6px; }
   .my-stats { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 6px; padding-bottom: 2px;}
   .my-stats h2 { font-size: 0.9rem; }
@@ -332,4 +361,10 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   
   .action-form input { width: 50px; padding: 4px; font-size: 0.9rem; }
   .btn-primary { padding: 6px 12px; font-size: 0.85rem; }
+}
+
+@media (max-width: 400px) {
+  .game-table-grid { grid-template-columns: 60px 1fr 60px; }
+  .plus-layout { width: 150px; height: 150px; }
+  .vertical-stack .card { width: 35px; height: 50px; margin-top: -38px; }
 }

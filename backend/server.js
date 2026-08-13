@@ -98,10 +98,19 @@ function isValidPlay(hand, cardToPlay, trick) {
   return true;
 }
 
+// CUSTOM SUIT PRIORITY: Hearts -> Clubs -> Diamonds -> Spades
+const SUIT_ORDER = { hearts: 1, clubs: 2, diamonds: 3, spades: 4 };
+
 function dealCards(gameState) {
   const deck = generateDeck();
   gameState.players.forEach((p, i) => {
-    p.hand = deck.slice(i * 13, (i + 1) * 13).sort((a, b) => a.suit.localeCompare(b.suit) || a.rank - b.rank);
+    p.hand = deck.slice(i * 13, (i + 1) * 13).sort((a, b) => {
+      // Sort by Suit first, then by Rank
+      if (SUIT_ORDER[a.suit] !== SUIT_ORDER[b.suit]) {
+        return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
+      }
+      return a.rank - b.rank; 
+    });
     p.bid = null;
     p.tricksWon = 0;
   });
@@ -110,7 +119,6 @@ function dealCards(gameState) {
   gameState.currentTrick = [];
   gameState.spadesBroken = false;
 }
-
 io.on('connection', (socket) => {
   // Send available rooms on connect
   socket.emit('ROOM_LIST', getPublicRooms());

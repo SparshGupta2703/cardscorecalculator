@@ -28,12 +28,10 @@ const playSound = (type) => {
       osc.start();
       osc.stop(ctx.currentTime + 0.08);
     }
-  } catch (e) {
-    // Browser audio policy catch
-  }
+  } catch (e) {}
 };
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:4000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL
 const socket = io(SOCKET_URL);
 
 const checkPlayable = (hand, cardToPlay, trick) => {
@@ -205,6 +203,16 @@ export default function App() {
     socket.emit('PLAY_CARD', { roomId, playerIndex: playingAs, cardId });
   };
 
+  // PLACED CORRECTLY INSIDE APP COMPONENT
+  const getRelativePosition = (playerIndex) => {
+    const seat = playingAs === 'ALL' ? 0 : playingAs;
+    const diff = (playerIndex - seat + 4) % 4;
+    if (diff === 0) return 'pos-bottom-trick';
+    if (diff === 1) return 'pos-left-trick';
+    if (diff === 2) return 'pos-top-trick';
+    if (diff === 3) return 'pos-right-trick';
+  };
+
   return (
     <div className="theme-wrapper dark-theme">
       <Toaster position="top-center" />
@@ -281,15 +289,21 @@ export default function App() {
                 );
               })()}
 
-              {/* CENTER TRICK */}
-              <div className="trick-area pos-center">
+              {/* CENTER TRICK (PLUS SHAPE) */}
+              <div className="trick-area pos-center plus-layout">
                 {currentTrick?.length === 0 && phase === 'playing' && (
                   <div className="trick-placeholder">Waiting for {players[currentTurnIndex].name} to lead...</div>
                 )}
                 {currentTrick?.map((play, idx) => (
-                  <div key={idx} className="trick-card">
-                    <small>{players[play.playerIndex].name}</small>
-                    <PlayingCard card={play.card} faceDown={false} />
+                  <div 
+                    key={idx} 
+                    className={`absolute-trick ${getRelativePosition(play.playerIndex)}`}
+                    style={{ zIndex: idx + 1 }} 
+                  >
+                    <div className="trick-card-animated">
+                      <small className="trick-name-label">{players[play.playerIndex].name}</small>
+                      <PlayingCard card={play.card} faceDown={false} />
+                    </div>
                   </div>
                 ))}
               </div>
