@@ -1,0 +1,200 @@
+import React, { useState } from 'react';
+import { socket } from '../socket/socketClient';
+import { playSound } from '../utils/audio';
+import { checkPlayable } from '../utils/gameRules';
+import PlayingCard from '../components/PlayingCard';
+import { Spade, User, Trophy, Crown, Play } from 'lucide-react';
+
+export default function GamePage({ gameState, roomId, playingAs }) {
+  const [bidInput, setBidInput] = useState('');
+  
+  if (!gameState) return <div className="loading">Entering Table...</div>;
+  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history } = gameState;
+  const isMyTurn = phase !== 'waiting' && playingAs === currentTurnIndex;
+
+  const handleBidSubmit = (e) => {
+    e.preventDefault();
+    if (bidInput === '' || isNaN(bidInput)) return;
+    playSound('click');
+    socket.emit('SUBMIT_BID', { roomId, index: currentTurnIndex, bid: parseInt(bidInput, 10) });
+    setBidInput('');
+  };
+
+  const handlePlayCard = (cardId) => {
+    if (!isMyTurn || phase !== 'playing' || currentTrick.length >= 4) return;
+    playSound('play');
+    socket.emit('PLAY_CARD', { roomId, playerIndex: playingAs, cardId });
+  };
+
+  const getRelativePosition = (playerIndex) => {
+    const seat = playingAs === 'ALL' ? 0 : playingAs;
+    const diff = (playerIndex - seat + 4) % 4;
+    if (diff === 0) return 'pos-bottom-trick';
+    if (diff === 1) return 'pos-left-trick';
+    if (diff === 2) return 'pos-top-trick';
+    if (diff === 3) return 'pos-right-trick';
+  };
+
+  return (
+    <div className="app-container">
+      <header>
+        <div>
+          <h1><Spade size={24} className="inline-icon" /> Spades Engine</h1>
+          <div className="profile-selector" style={{background: 'transparent', border: 'none', padding: 0}}>
+            <User size={16} color="#94a3b8" />
+            <label style={{color: '#94a3b8', marginLeft: '4px'}}>Playing As: </label>
+            <strong style={{color: '#38bdf8', fontSize: '1.2rem', marginLeft: '8px'}}>{players[playingAs]?.name || 'Spectator'}</strong>
+          </div>
+        </div>
+        <div className="header-right">
+          <p className="round-badge">Round {round}</p>
+          <div className="spades-status">Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
+        </div>
+      </header>
+
+      <div className="game-table">
+        {phase === 'waiting' && (
+          <div className="center-action animate-pop">
+            <h2>Waiting for Players ({players.filter(p => p.socketId).length}/4)</h2>
+            <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to 26 wins. 1 trick = 1 point.</p>
+            {playingAs === 0 && (
+              <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>
+                <Play size={18} style={{marginRight: '8px'}} /> Deal Cards
+              </button>
+            )}
+          </div>
+        )}
+
+        {phase !== 'waiting' && phase !== 'game_over' && (
+          <div className="game-table-grid">
+            {/* Top Opponent */}
+            {(() => {
+              const topP = players[(playingAs + 2) % 4];
+              return (
+                <div className={`opponent-card pos-top ${currentTurnIndex === topP.id ? 'active-turn' : ''} ${!topP.socketId ? 'dimmed-card' : ''}`}>
+                  <h3>{topP.name}</h3>
+                  <div className="stats-row"><span>Score: {topP.score}</span> | <span>Bid: {topP.bid !== null ? topP.bid : '?'}</span> | <span>Won: {topP.tricksWon}</span></div>
+                  <div className="opponent-hand stacked-cards">{topP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} />)}</div>
+                </div>
+              );
+            })()}
+
+            {/* Left Opponent */}
+            {(() => {
+              const leftP = players[(playingAs + 1) % 4];
+              return (
+                <div className={`opponent-card pos-left ${currentTurnIndex === leftP.id ? 'active-turn' : ''} ${!leftP.socketId ? 'dimmed-card' : ''}`}>
+                  <h3>{leftP.name}</h3>
+                  <div className="stats-col"><span>Scr: {leftP.score}</span><span>Bid: {leftP.bid !== null ? leftP.bid : '?'}</span><span>Won: {leftP.tricksWon}</span></div>
+                  <div className="opponent-hand vertical-stack">{leftP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} />)}</div>
+                </div>
+              );
+            })()}
+
+            {/* Center Trick Area */}
+            <div className="trick-area pos-center plus-layout">
+              {currentTrick?.length === 0 && phase === 'playing' && <div className="trick-placeholder">Waiting for {players[currentTurnIndex].name} to lead...</div>}
+              {currentTrick?.map((play, idx) => (
+                <div key={idx} className={`absolute-trick ${getRelativePosition(play.playerIndex)}`} style={{ zIndex: idx + 1 }}>
+                  <div className="trick-card-animated">
+                    <small className="trick-name-label">{players[play.playerIndex].name}</small>
+                    <PlayingCard card={play.card} faceDown={false} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Right Opponent */}
+            {(() => {
+              const rightP = players[(playingAs + 3) % 4];
+              return (
+                <div className={`opponent-card pos-right ${currentTurnIndex === rightP.id ? 'active-turn' : ''} ${!rightP.socketId ? 'dimmed-card' : ''}`}>
+                  <h3>{rightP.name}</h3>
+                  <div className="stats-col"><span>Scr: {rightP.score}</span><span>Bid: {rightP.bid !== null ? rightP.bid : '?'}</span><span>Won: {rightP.tricksWon}</span></div>
+                  <div className="opponent-hand vertical-stack">{rightP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} />)}</div>
+                </div>
+              );
+            })()}
+
+            {/* My Area (Bottom) */}
+            <div className={`my-area pos-bottom ${isMyTurn ? 'my-turn-active' : ''}`}>
+              <div className="my-stats">
+                <h2>{players[playingAs]?.name || 'Spectator'} (You)</h2>
+                <div className="my-scores">
+                  <span>Total Score: <strong>{players[playingAs]?.score || 0}</strong></span><span className="divider">|</span>
+                  <span>Bid: <strong>{players[playingAs]?.bid !== null && players[playingAs]?.bid !== undefined ? players[playingAs].bid : '-'}</strong></span><span className="divider">|</span>
+                  <span>Won: <strong>{players[playingAs]?.tricksWon || 0}</strong></span>
+                </div>
+              </div>
+              
+              {phase === 'bidding' && isMyTurn && (
+                <form onSubmit={handleBidSubmit} className="action-form animate-pop">
+                  <label style={{color: "white"}}>Enter your bid:</label>
+                  <input type="number" min="0" max="13" value={bidInput} onChange={(e) => setBidInput(e.target.value)} autoFocus />
+                  <button type="submit" className="btn-primary">Submit</button>
+                </form>
+              )}
+
+              <div className="my-hand stacked-cards my-stacked-cards">
+                {players[playingAs]?.hand?.map(card => {
+                  const amIPlaying = phase === 'playing' && isMyTurn;
+                  const canPlayCard = amIPlaying ? checkPlayable(players[playingAs].hand, card, currentTrick) : false;
+                  const isDimmed = phase === 'playing' && (!isMyTurn || !canPlayCard);
+                  return <PlayingCard key={card.id} card={card} faceDown={false} isPlayable={canPlayCard} isDimmed={isDimmed} onClick={() => handlePlayCard(card.id)} />;
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Scoring / Game Over Overlays */}
+        {phase === 'scoring' && (
+          <div className="center-action animate-pop">
+            <h2>Round {round} Over!</h2>
+            {gameState.overtimeActive && <p style={{color: '#f1c40f', fontWeight: 'bold', margin: '12px 0'}}>⚠️ Tie-Breaker Active! (Overtime {gameState.overtimeRound}/3)</p>}
+            <p style={{marginBottom: '16px'}}>Scores calculated.</p>
+            {playingAs === 0 && <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('NEXT_ROUND', roomId); }}><Play size={18} style={{marginRight: '8px'}} /> Deal Round {round + 1}</button>}
+          </div>
+        )}
+        {phase === 'game_over' && (
+          <div className="center-action animate-pop">
+            <h1 style={{color: '#f1c40f', fontSize: '2.5rem', margin: '0 0 16px 0'}}>Game Over!</h1>
+            <div style={{background: 'rgba(0,0,0,0.6)', padding: '20px', borderRadius: '12px', marginBottom: '24px', textAlign: 'left', border: '1px solid #f1c40f'}}>
+              {[...players].sort((a, b) => b.score - a.score).map((p, index) => (
+                <div key={p.id} style={{fontSize: '1.2rem', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', color: index === 0 ? '#4ade80' : 'white'}}>
+                  {index === 0 && <Crown size={24} color="#facc15" />} {p.name}: <strong>{p.score} pts</strong>
+                </div>
+              ))}
+            </div>
+            {playingAs === 0 && <button className="btn-primary" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>Play Again</button>}
+          </div>
+        )}
+      </div>
+
+      {/* History Table */}
+      {history?.length > 0 && (
+        <div className="table-container animate-pop">
+          <div className="table-header-row"><h2><Trophy size={20} className="inline-icon" /> Round History</h2></div>
+          <div className="table-scroll-wrapper">
+            <table className="score-table">
+              <thead><tr><th className="rnd-col">Rnd</th>{players.map(p => <th key={p.id}>{p.name}</th>)}</tr></thead>
+              <tbody>
+                {history.map((row) => (
+                  <tr key={row.round}>
+                    <td className="rnd-col"><strong>R{row.round}</strong></td>
+                    {row.playerResults.map((res, i) => (
+                      <td key={i} className={`score-cell ${res.change > 0 ? 'cell-success' : 'cell-fail'}`}>
+                        <div className="score-change">{res.change > 0 ? `+${res.change}` : res.change}</div>
+                        <small className="score-details">Bid: {res.bid} | Won: {res.won}</small>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
