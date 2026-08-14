@@ -396,3 +396,24 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   .plus-layout { width: 150px; height: 150px; }
   .vertical-stack .card { width: 35px; height: 50px; margin-top: -38px; }
 }
+
+/* Card Throw Animation */
+@keyframes throw-card {
+  0% {
+    opacity: 0;
+    /* Start lower down, slightly smaller, and tilted */
+    transform: translateY(120px) scale(0.7) rotate(-20deg); 
+  }
+  100% {
+    opacity: 1;
+    /* Snap into final position */
+    transform: translateY(0) scale(1) rotate(0deg); 
+  }
+}
+
+.animate-throw {
+  /* The cubic-bezier adds a realistic snap/bounce effect */
+  animation: throw-card 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  /* Ensures it doesn't flicker before the animation starts */
+  will-change: transform, opacity; 
+}

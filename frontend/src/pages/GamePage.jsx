@@ -16,9 +16,10 @@ export default function GamePage({ gameState, roomId, playingAs }) {
   
   const handleLeaveTable = () => {
     playSound('click');
-    socket.emit('LEAVE_ROOM', { roomId }); // Tells the backend you left
-    navigate('/'); // Sends you back to the lobby
+    socket.emit('LEAVE_ROOM', { roomId });
+    navigate('/');
   };
+
   if (!gameState) return <div className="loading">Entering Table...</div>;
   const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history, roomPassword, customFaceMap } = gameState;
   const isMyTurn = phase !== 'waiting' && playingAs === currentTurnIndex;
@@ -37,7 +38,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
     socket.emit('PLAY_CARD', { roomId, playerIndex: playingAs, cardId });
   };
 
-  // --- NEW: CLEAN TOGGLE LOGIC ---
   const handleToggleFaces = (e) => {
     const isChecked = e.target.checked;
     setUseCustomFaces(isChecked);
@@ -72,11 +72,9 @@ export default function GamePage({ gameState, roomId, playingAs }) {
         </div>
         
         <div className="header-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-          {/* LOGOUT BUTTON ADDED TO IN-GAME HEADER */}
-         {/* OLD: onClick={logout} */}
-        <button onClick={handleLeaveTable} className="btn btn-error btn-sm btn-outline gap-2 text-xs">
-          <LogOut size={14} /> Leave Table
-        </button>
+          <button onClick={handleLeaveTable} className="btn btn-error btn-sm btn-outline gap-2 text-xs">
+            <LogOut size={14} /> Leave Table
+          </button>
           <p className="round-badge" style={{ margin: 0 }}>Password: <span style={{color: '#facc15'}}>{roomPassword}</span></p>
           <div className="spades-status">Round {round} | Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
         </div>
@@ -88,7 +86,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
             <h2>Waiting for Players ({players.filter(p => p.socketId).length}/4)</h2>
             <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to 26 wins. 1 trick = 1 point.</p>
             
-            {/* THE NEW CHECKBOX UI */}
             <div style={{ background: 'rgba(0,0,0,0.5)', padding: '16px', borderRadius: '12px', marginBottom: '20px', textAlign: 'left' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', color: '#f8fafc', fontWeight: 'bold' }}>
                 <input 
@@ -114,7 +111,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
 
         {phase !== 'waiting' && phase !== 'game_over' && (
           <div className="game-table-grid">
-            {/* PASS customFaceMap TO ALL PlayingCard COMPONENTS */}
             {(() => {
               const topP = players[(playingAs + 2) % 4];
               return (
@@ -143,7 +139,15 @@ export default function GamePage({ gameState, roomId, playingAs }) {
                 <div key={idx} className={`absolute-trick ${getRelativePosition(play.playerIndex)}`} style={{ zIndex: idx + 1 }}>
                   <div className="trick-card-animated">
                     <small className="trick-name-label">{players[play.playerIndex].name}</small>
-                    <PlayingCard card={play.card} faceDown={false} customFaceMap={customFaceMap} />
+                    
+                    {/* ADDED: isPlayed={true} right here to trigger the throw animation! */}
+                    <PlayingCard 
+                      card={play.card} 
+                      faceDown={false} 
+                      customFaceMap={customFaceMap} 
+                      isPlayed={true} 
+                    />
+                    
                   </div>
                 </div>
               ))}

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function PlayingCard({ card, faceDown, isPlayable, isDimmed, onClick, customFaceMap }) {
+export default function PlayingCard({ card, faceDown, isPlayable, isPlayed, isDimmed, onClick, customFaceMap }) {
   if (faceDown) {
     return (
       <div className="card-base card-back shadow-md">
@@ -20,7 +20,7 @@ export default function PlayingCard({ card, faceDown, isPlayable, isDimmed, onCl
   return (
     <div 
       onClick={isPlayable && !isDimmed ? onClick : undefined}
-      className={`card-base card-front ${isPlayable ? 'card-playable cursor-pointer hover:-translate-y-2' : ''} ${isDimmed ? 'opacity-40 grayscale' : ''} shadow-lg`}
+      className={`card-base card-front ${isPlayable ? 'card-playable cursor-pointer hover:-translate-y-2' : ''} ${isDimmed ? 'opacity-40 grayscale' : ''} ${isPlayed ? 'animate-throw' : ''} shadow-lg`}
       style={{
         background: '#ffffff',
         color: isRed ? '#ef4444' : '#0f172a',
