@@ -22,7 +22,7 @@ export default function PlayingCard({ card, faceDown, isPlayable, isPlayed, isDi
       onClick={isPlayable && !isDimmed ? onClick : undefined}
       className={`card-base card-front ${isPlayable ? 'card-playable cursor-pointer hover:-translate-y-2' : ''} ${isDimmed ? 'opacity-40 grayscale' : ''} ${isPlayed ? 'animate-throw' : ''} shadow-lg`}
       style={{
-        background: '#ffffff',
+        background: 'transparent'
         color: isRed ? '#ef4444' : '#0f172a',
         borderRadius: '12px',
         width: '80px',

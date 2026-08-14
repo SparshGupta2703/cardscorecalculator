@@ -139,6 +139,9 @@ module.exports = (io) => {
       room.gameState.history = [];
       room.gameState.players.forEach(p => p.score = 0);
       
+      // Add this right before gameService.dealCards(room.gameState);
+      room.gameState.dealerIndex = 0;
+      room.gameState.currentTurnIndex = 1; // Player 1 starts the bidding
       gameService.dealCards(room.gameState);
       broadcastState(roomId);
     });
@@ -181,13 +184,28 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
    
-    socket.on('NEXT_ROUND', (roomId) => {
-      const room = roomRepo.getRoom(roomId);
-      if (!room) return;
-      room.gameState.round += 1;
-      gameService.dealCards(room.gameState);
-      broadcastState(roomId);
-    });
+   socket.on('NEXT_ROUND', (roomId) => {
+  const room = roomRepo.getRoom(roomId);
+  if (!room) return;
+
+  // 1. Shift the dealer one seat to the left
+  room.gameState.dealerIndex = (room.gameState.dealerIndex + 1) % 4;
+
+  // 2. The person left of the NEW dealer starts the bidding
+  room.gameState.currentTurnIndex = (room.gameState.dealerIndex + 1) % 4;
+
+  // 3. Reset round stats
+  room.gameState.round += 1;
+  room.gameState.players.forEach(p => {
+    p.bid = null;
+    p.tricksWon = 0;
+    p.hand = [];
+  });
+
+  // 4. Deal and broadcast
+  gameService.dealCards(room.gameState);
+  broadcastState(roomId);
+});
 
     socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
       const room = roomRepo.getRoom(roomId);
