@@ -21,59 +21,124 @@ module.exports = (io) => {
   io.on('connection', (socket) => {
     socket.emit('ROOM_LIST', getPublicRooms());
 
-   socket.on('CREATE_ROOM', ({ roomName, password, username }) => {
-      const roomId = Math.random().toString(36).substring(2, 9);
-      const sessionId = generateSessionId(); 
-      
-      const newRoom = roomRepo.createRoom(roomId, {
-        // ADDED: Pass password into createInitialGameState
-        id: roomId, name: roomName, password, gameState: gameService.createInitialGameState(password)
-      });
-      
-      newRoom.gameState.players[0].name = username;
-      newRoom.gameState.players[0].socketId = socket.id;
-      newRoom.gameState.players[0].sessionId = sessionId; 
-      
-      socket.join(roomId);
-      socket.emit('ROOM_JOINED', { roomId, seatIndex: 0, sessionId });
-      io.emit('ROOM_LIST', getPublicRooms());
-      broadcastState(roomId);
+  socket.on('CREATE_ROOM', ({ roomName, password, username }) => {
+      try {
+        console.log(`[CREATE_ROOM] Request from: ${username}`);
+        const roomId = Math.random().toString(36).substring(2, 9);
+        const sessionId = Math.random().toString(36).substring(2, 15); 
+        
+        const newRoom = roomRepo.createRoom(roomId, {
+          id: roomId, 
+          name: roomName, 
+          password: password, 
+          gameState: gameService.createInitialGameState(password)
+        });
+        
+        // Fallback to "Player 1" just in case the auth context drops
+        newRoom.gameState.players[0].name = username || 'Player 1';
+        newRoom.gameState.players[0].socketId = socket.id;
+        newRoom.gameState.players[0].sessionId = sessionId; 
+        
+        socket.join(roomId);
+        socket.emit('ROOM_JOINED', { roomId, seatIndex: 0, sessionId });
+        io.emit('ROOM_LIST', getPublicRooms());
+        broadcastState(roomId);
+      } catch (err) {
+        console.error("Error creating room:", err);
+        socket.emit('ROOM_ERROR', 'Server error: Failed to create table.');
+      }
     });
 
     // --- NEW: HANDLE UPLOADED SELFIES ---
-    socket.on('UPLOAD_FACE', ({ roomId, imageUrl }) => {
+   // Add custom MongoDB faces to the deck
+    socket.on('USE_CUSTOM_FACES', ({ roomId, cardFaces }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
-      // Cap at 4 faces total
-      if (room.gameState.uploadedFaces.length < 4) {
-        room.gameState.uploadedFaces.push(imageUrl);
-        broadcastState(roomId);
-      }
+      
+      // Merges the user's customized faces right into the active game's deck!
+      room.gameState.customFaceMap = { 
+        ...room.gameState.customFaceMap, 
+        ...cardFaces 
+      };
+      broadcastState(roomId);
     });
 
-    socket.on('START_GAME', (roomId) => {
+    // Remove them if they uncheck the box
+    socket.on('REMOVE_CUSTOM_FACES', ({ roomId }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       
-      // --- NEW: RANDOMIZE FACES ---
-      const faces = [...room.gameState.uploadedFaces];
-      for (let i = faces.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [faces[i], faces[j]] = [faces[j], faces[i]];
-      }
+      room.gameState.customFaceMap = {}; // Resets deck back to normal
+      broadcastState(roomId);
+    });
+  // 1. ADD 'async' right here!
+   socket.on('START_GAME', async (roomId) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
       
-      // Map random faces to Jack (11), Queen (12), King (13), Ace (14)
-      const faceRanks = [11, 12, 13, 14];
-      room.gameState.customFaceMap = {};
-      faces.forEach((url, i) => {
-        if (faceRanks[i]) room.gameState.customFaceMap[faceRanks[i]] = url;
-      });
+      try {
+        let allAvailableFaces = [];
 
+        // 1. BACKUP: Grab any faces that were already loaded into the room memory
+        if (room.gameState.customFaceMap) {
+          const memoryFaces = Object.values(room.gameState.customFaceMap).filter(url => url);
+          allAvailableFaces.push(...memoryFaces);
+        }
+
+        // 2. PRIMARY: Try to fetch EVERYONE'S real face from the database
+        try {
+          const User = require('../models/User'); // Grabs the DB model
+          // Looks for 'username' or 'name' just in case your player object uses a different key
+          const seatedUsernames = room.gameState.players.map(p => p.username || p.name).filter(Boolean);
+          
+          if (seatedUsernames.length > 0) {
+            const usersInGame = await User.find({ username: { $in: seatedUsernames } });
+            const dbFaces = usersInGame.map(u => u.pfp).filter(url => url);
+            allAvailableFaces.push(...dbFaces);
+          }
+        } catch (dbErr) {
+          console.log("DB Face Fetch skipped, relying on memory:", dbErr.message);
+        }
+
+        // 3. DE-DUPLICATE: This turns 4 Toucans into just 1 Toucan
+        const uniqueFaces = [...new Set(allAvailableFaces)];
+
+        // 4. Safely clear the map to prepare for 1-to-1 assignments
+        room.gameState.customFaceMap = {};
+
+        if (uniqueFaces.length > 0) {
+          // Shuffle the unique faces
+          for (let i = uniqueFaces.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [uniqueFaces[i], uniqueFaces[j]] = [uniqueFaces[j], uniqueFaces[i]];
+          }
+
+          // Shuffle the 4 Royal Ranks (11=J, 12=Q, 13=K, 14=A)
+          const ranks = [11, 12, 13, 14];
+          for (let i = ranks.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [ranks[i], ranks[j]] = [ranks[j], ranks[i]];
+          }
+
+          // 5. THE MAGIC: Map exactly 1 unique face to 1 random card rank!
+          // If you are the only one with a PFP, it only loops once.
+          for (let i = 0; i < uniqueFaces.length; i++) {
+            if (i < 4) { // Safety limit: Max 4 card types
+              room.gameState.customFaceMap[ranks[i]] = uniqueFaces[i];
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Multiplayer Face Shuffle Error:", err);
+      }
+
+      // Standard Game Reset Logic
       room.gameState.round = 1;
       room.gameState.overtimeRound = 0;
       room.gameState.overtimeActive = false;
       room.gameState.history = [];
       room.gameState.players.forEach(p => p.score = 0);
+      
       gameService.dealCards(room.gameState);
       broadcastState(roomId);
     });

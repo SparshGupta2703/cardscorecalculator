@@ -1,17 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { socket } from '../socket/socketClient';
 import { playSound } from '../utils/audio';
 import { checkPlayable } from '../utils/gameRules';
+import { AuthContext } from '../context/AuthContext';
 import PlayingCard from '../components/PlayingCard';
 import toast from 'react-hot-toast';
-import { Spade, User, Trophy, Crown, Play, Camera } from 'lucide-react';
+import { Spade, User, Trophy, Crown, Play, Image as ImageIcon, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function GamePage({ gameState, roomId, playingAs }) {
+  const { user, logout } = useContext(AuthContext);
   const [bidInput, setBidInput] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
+  const [useCustomFaces, setUseCustomFaces] = useState(false);
+  const navigate = useNavigate();
   
+  const handleLeaveTable = () => {
+    playSound('click');
+    socket.emit('LEAVE_ROOM', { roomId }); // Tells the backend you left
+    navigate('/'); // Sends you back to the lobby
+  };
   if (!gameState) return <div className="loading">Entering Table...</div>;
-  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history, roomPassword, uploadedFaces, customFaceMap } = gameState;
+  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history, roomPassword, customFaceMap } = gameState;
   const isMyTurn = phase !== 'waiting' && playingAs === currentTurnIndex;
 
   const handleBidSubmit = (e) => {
@@ -28,35 +37,16 @@ export default function GamePage({ gameState, roomId, playingAs }) {
     socket.emit('PLAY_CARD', { roomId, playerIndex: playingAs, cardId });
   };
 
-  // --- SECURE BACKEND UPLOAD LOGIC ---
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setIsUploading(true);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      // Send the image to our Node.js backend using Multer!
-      const BACKEND_URL = import.meta.env.VITE_SOCKET_URL
-      const res = await fetch(`${BACKEND_URL}/api/upload-face`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      const data = await res.json();
-      
-      if (data.secure_url) {
-        socket.emit('UPLOAD_FACE', { roomId, imageUrl: data.secure_url });
-        toast.success("Selfie added to the deck!");
-      } else {
-        toast.error("Upload failed on server.");
-      }
-    } catch (err) {
-      toast.error("Upload connection failed");
-    } finally {
-      setIsUploading(false);
+  // --- NEW: CLEAN TOGGLE LOGIC ---
+  const handleToggleFaces = (e) => {
+    const isChecked = e.target.checked;
+    setUseCustomFaces(isChecked);
+    
+    if (isChecked && user?.cardFaces) {
+      socket.emit('USE_CUSTOM_FACES', { roomId, cardFaces: user.cardFaces });
+      toast.success("Your AI Royal Cards are ready for the deck!");
+    } else {
+      socket.emit('REMOVE_CUSTOM_FACES', { roomId });
     }
   };
 
@@ -80,9 +70,14 @@ export default function GamePage({ gameState, roomId, playingAs }) {
             <strong style={{color: '#38bdf8', fontSize: '1.2rem', marginLeft: '8px'}}>{players[playingAs]?.name || 'Spectator'}</strong>
           </div>
         </div>
-        <div className="header-right">
-          {/* PASSWORD VISIBLE HERE */}
-          <p className="round-badge">Password: <span style={{color: '#facc15'}}>{roomPassword}</span></p>
+        
+        <div className="header-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+          {/* LOGOUT BUTTON ADDED TO IN-GAME HEADER */}
+         {/* OLD: onClick={logout} */}
+        <button onClick={handleLeaveTable} className="btn btn-error btn-sm btn-outline gap-2 text-xs">
+          <LogOut size={14} /> Leave Table
+        </button>
+          <p className="round-badge" style={{ margin: 0 }}>Password: <span style={{color: '#facc15'}}>{roomPassword}</span></p>
           <div className="spades-status">Round {round} | Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
         </div>
       </header>
@@ -93,27 +88,20 @@ export default function GamePage({ gameState, roomId, playingAs }) {
             <h2>Waiting for Players ({players.filter(p => p.socketId).length}/4)</h2>
             <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to 26 wins. 1 trick = 1 point.</p>
             
-            {/* SELFIE UPLOAD UI */}
-            <div style={{ background: 'rgba(0,0,0,0.5)', padding: '16px', borderRadius: '12px', marginBottom: '20px' }}>
-              <p style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                <Camera size={16} className="inline-icon" /> Optional: Add up to 4 custom faces for J, Q, K, A!
+            {/* THE NEW CHECKBOX UI */}
+            <div style={{ background: 'rgba(0,0,0,0.5)', padding: '16px', borderRadius: '12px', marginBottom: '20px', textAlign: 'left' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', color: '#f8fafc', fontWeight: 'bold' }}>
+                <input 
+                  type="checkbox" 
+                  checked={useCustomFaces} 
+                  onChange={handleToggleFaces} 
+                  style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#38bdf8' }} 
+                />
+                <ImageIcon size={20} color="#38bdf8" /> Use my AI Custom Royal Cards
+              </label>
+              <p style={{ margin: '8px 0 0 32px', fontSize: '0.85rem', color: '#94a3b8' }}>
+                If checked, your personalized Jack, Queen, King, and Ace faces will be injected into this deck.
               </p>
-              
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '12px' }}>
-                {uploadedFaces.map((url, i) => (
-                  <img key={i} src={url} alt="face" style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #38bdf8' }} />
-                ))}
-                {[...Array(Math.max(0, 4 - uploadedFaces.length))].map((_, i) => (
-                  <div key={`empty-${i}`} style={{ width: '45px', height: '45px', borderRadius: '50%', border: '2px dashed #475569', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', fontSize: '0.8rem' }}>?</div>
-                ))}
-              </div>
-
-              {uploadedFaces.length < 4 && (
-                <label className="btn-secondary" style={{ display: 'inline-block', cursor: 'pointer' }}>
-                  {isUploading ? 'Uploading...' : 'Upload Selfie'}
-                  <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} disabled={isUploading} />
-                </label>
-              )}
             </div>
 
             {playingAs === 0 && (
@@ -202,7 +190,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
           </div>
         )}
 
-        {/* Scoring / Game Over Overlays */}
         {phase === 'scoring' && (
           <div className="center-action animate-pop">
             <h2>Round {round} Over!</h2>
@@ -227,7 +214,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
         )}
       </div>
 
-      {/* History Table */}
       {history?.length > 0 && (
         <div className="table-container animate-pop">
           <div className="table-header-row"><h2><Trophy size={20} className="inline-icon" /> Round History</h2></div>
