@@ -20,8 +20,39 @@ module.exports = (io) => {
 
   io.on('connection', (socket) => {
     socket.emit('ROOM_LIST', getPublicRooms());
+    
+    // ==========================================
+    // MUSIC PLAYER / DJ BOOTH LOGIC
+    // ==========================================
 
-  socket.on('CREATE_ROOM', ({ roomName, password, username }) => {
+    socket.on('UPDATE_TRACK', ({ roomId, url }) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
+      
+      room.gameState.musicState.url = url;
+      room.gameState.musicState.isPlaying = true;
+      room.gameState.musicState.playedSeconds = 0;
+      
+      broadcastState(roomId);
+    });
+
+    socket.on('TOGGLE_PLAY', ({ roomId, isPlaying }) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
+      
+      room.gameState.musicState.isPlaying = isPlaying;
+      broadcastState(roomId);
+    });
+
+    socket.on('SYNC_TIME', ({ roomId, playedSeconds }) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
+      
+      room.gameState.musicState.playedSeconds = playedSeconds;
+      broadcastState(roomId);
+    });
+
+    socket.on('CREATE_ROOM', ({ roomName, password, username }) => {
       try {
         console.log(`[CREATE_ROOM] Request from: ${username}`);
         const roomId = Math.random().toString(36).substring(2, 9);
@@ -34,7 +65,6 @@ module.exports = (io) => {
           gameState: gameService.createInitialGameState(password)
         });
         
-        // Fallback to "Player 1" just in case the auth context drops
         newRoom.gameState.players[0].name = username || 'Player 1';
         newRoom.gameState.players[0].socketId = socket.id;
         newRoom.gameState.players[0].sessionId = sessionId; 
@@ -49,13 +79,11 @@ module.exports = (io) => {
       }
     });
 
-    // --- NEW: HANDLE UPLOADED SELFIES ---
-   // Add custom MongoDB faces to the deck
+    // --- HANDLE UPLOADED SELFIES ---
     socket.on('USE_CUSTOM_FACES', ({ roomId, cardFaces }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       
-      // Merges the user's customized faces right into the active game's deck!
       room.gameState.customFaceMap = { 
         ...room.gameState.customFaceMap, 
         ...cardFaces 
@@ -63,32 +91,28 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
 
-    // Remove them if they uncheck the box
     socket.on('REMOVE_CUSTOM_FACES', ({ roomId }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       
-      room.gameState.customFaceMap = {}; // Resets deck back to normal
+      room.gameState.customFaceMap = {}; 
       broadcastState(roomId);
     });
-  // 1. ADD 'async' right here!
-   socket.on('START_GAME', async (roomId) => {
+
+    socket.on('START_GAME', async (roomId) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       
       try {
         let allAvailableFaces = [];
 
-        // 1. BACKUP: Grab any faces that were already loaded into the room memory
         if (room.gameState.customFaceMap) {
           const memoryFaces = Object.values(room.gameState.customFaceMap).filter(url => url);
           allAvailableFaces.push(...memoryFaces);
         }
 
-        // 2. PRIMARY: Try to fetch EVERYONE'S real face from the database
         try {
-          const User = require('../models/User'); // Grabs the DB model
-          // Looks for 'username' or 'name' just in case your player object uses a different key
+          const User = require('../models/User'); 
           const seatedUsernames = room.gameState.players.map(p => p.username || p.name).filter(Boolean);
           
           if (seatedUsernames.length > 0) {
@@ -100,30 +124,23 @@ module.exports = (io) => {
           console.log("DB Face Fetch skipped, relying on memory:", dbErr.message);
         }
 
-        // 3. DE-DUPLICATE: This turns 4 Toucans into just 1 Toucan
         const uniqueFaces = [...new Set(allAvailableFaces)];
-
-        // 4. Safely clear the map to prepare for 1-to-1 assignments
         room.gameState.customFaceMap = {};
 
         if (uniqueFaces.length > 0) {
-          // Shuffle the unique faces
           for (let i = uniqueFaces.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [uniqueFaces[i], uniqueFaces[j]] = [uniqueFaces[j], uniqueFaces[i]];
           }
 
-          // Shuffle the 4 Royal Ranks (11=J, 12=Q, 13=K, 14=A)
           const ranks = [11, 12, 13, 14];
           for (let i = ranks.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [ranks[i], ranks[j]] = [ranks[j], ranks[i]];
           }
 
-          // 5. THE MAGIC: Map exactly 1 unique face to 1 random card rank!
-          // If you are the only one with a PFP, it only loops once.
           for (let i = 0; i < uniqueFaces.length; i++) {
-            if (i < 4) { // Safety limit: Max 4 card types
+            if (i < 4) { 
               room.gameState.customFaceMap[ranks[i]] = uniqueFaces[i];
             }
           }
@@ -132,19 +149,18 @@ module.exports = (io) => {
         console.error("Multiplayer Face Shuffle Error:", err);
       }
 
-      // Standard Game Reset Logic
       room.gameState.round = 1;
       room.gameState.overtimeRound = 0;
       room.gameState.overtimeActive = false;
       room.gameState.history = [];
       room.gameState.players.forEach(p => p.score = 0);
       
-      // Add this right before gameService.dealCards(room.gameState);
       room.gameState.dealerIndex = 0;
-      room.gameState.currentTurnIndex = 1; // Player 1 starts the bidding
+      room.gameState.currentTurnIndex = 1; 
       gameService.dealCards(room.gameState);
       broadcastState(roomId);
     });
+
     socket.on('JOIN_ROOM', ({ roomId, password, username }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return socket.emit('ROOM_ERROR', 'Room not found.');
@@ -153,29 +169,25 @@ module.exports = (io) => {
       const emptySeatIndex = room.gameState.players.findIndex(p => !p.socketId);
       if (emptySeatIndex === -1) return socket.emit('ROOM_ERROR', 'Room is full.');
 
-      const sessionId = generateSessionId(); // Create secret token
+      const sessionId = generateSessionId(); 
       
       room.gameState.players[emptySeatIndex].name = username;
       room.gameState.players[emptySeatIndex].socketId = socket.id;
-      room.gameState.players[emptySeatIndex].sessionId = sessionId; // Lock seat to token
+      room.gameState.players[emptySeatIndex].sessionId = sessionId; 
 
       socket.join(roomId);
-      // Send the token back to the joiner
       socket.emit('ROOM_JOINED', { roomId, seatIndex: emptySeatIndex, sessionId });
       io.emit('ROOM_LIST', getPublicRooms());
       broadcastState(roomId);
     });
 
-    // --- NEW REJOIN EVENT ---
     socket.on('REJOIN_ROOM', ({ roomId, sessionId }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return socket.emit('REJOIN_FAILED', 'Room ended or not found.');
 
-      // Find the specific seat tied to this user's secret token
       const playerIndex = room.gameState.players.findIndex(p => p.sessionId === sessionId);
       if (playerIndex === -1) return socket.emit('REJOIN_FAILED', 'Invalid session.');
 
-      // Reclaim the seat!
       room.gameState.players[playerIndex].socketId = socket.id;
       
       socket.join(roomId);
@@ -184,28 +196,23 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
    
-   socket.on('NEXT_ROUND', (roomId) => {
-  const room = roomRepo.getRoom(roomId);
-  if (!room) return;
+    socket.on('NEXT_ROUND', (roomId) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
 
-  // 1. Shift the dealer one seat to the left
-  room.gameState.dealerIndex = (room.gameState.dealerIndex + 1) % 4;
+      room.gameState.dealerIndex = (room.gameState.dealerIndex + 1) % 4;
+      room.gameState.currentTurnIndex = (room.gameState.dealerIndex + 1) % 4;
 
-  // 2. The person left of the NEW dealer starts the bidding
-  room.gameState.currentTurnIndex = (room.gameState.dealerIndex + 1) % 4;
+      room.gameState.round += 1;
+      room.gameState.players.forEach(p => {
+        p.bid = null;
+        p.tricksWon = 0;
+        p.hand = [];
+      });
 
-  // 3. Reset round stats
-  room.gameState.round += 1;
-  room.gameState.players.forEach(p => {
-    p.bid = null;
-    p.tricksWon = 0;
-    p.hand = [];
-  });
-
-  // 4. Deal and broadcast
-  gameService.dealCards(room.gameState);
-  broadcastState(roomId);
-});
+      gameService.dealCards(room.gameState);
+      broadcastState(roomId);
+    });
 
     socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
       const room = roomRepo.getRoom(roomId);
@@ -286,20 +293,59 @@ module.exports = (io) => {
       }
       broadcastState(roomId);
     });
+    
+    // ==========================================
+    // ADD THIS NEW EVENT LISTENER:
+    // ==========================================
+    socket.on('GET_ROOMS', () => {
+      socket.emit('ROOM_LIST', getPublicRooms());
+    });
+    // ==========================================
 
+    // ==========================================
+    // THE REFRESH TIMEOUT FIX
+    // ==========================================
     socket.on('disconnect', () => {
       const rooms = roomRepo.getAllRooms();
       for (const room of rooms) {
-        const player = room.gameState.players.find(p => p.socketId === socket.id);
-        if (player) {
+        const playerIndex = room.gameState.players.findIndex(p => p.socketId === socket.id);
+        
+        if (playerIndex !== -1) {
+          const player = room.gameState.players[playerIndex];
+          
+          // Temporarily unbind the socket, but DO NOT delete the room yet.
           player.socketId = null;
-          player.name = 'Disconnected';
-          if (room.gameState.players.filter(p => p.socketId !== null).length === 0) {
-            roomRepo.deleteRoom(room.id);
-          } else {
-            broadcastState(room.id);
-          }
+          broadcastState(room.id);
           io.emit('ROOM_LIST', getPublicRooms());
+
+          // Start the 5-second grace period timer
+          setTimeout(() => {
+            // Fetch the room fresh from memory to see if they triggered the REJOIN_ROOM event
+            const currentRoom = roomRepo.getRoom(room.id);
+            if (!currentRoom) return; 
+
+            const currentPlayer = currentRoom.gameState.players[playerIndex];
+            
+            // If they STILL have no socketId after 5 seconds, they abandoned the game for good.
+            if (currentPlayer.socketId === null) {
+              // Completely clear the seat so someone else can sit down
+              currentPlayer.name = 'Waiting...';
+              currentPlayer.sessionId = null;    
+              currentPlayer.score = 0;
+              currentPlayer.hand = [];
+              currentPlayer.bid = null;
+              currentPlayer.tricksWon = 0;
+
+              // Check if the room is now completely empty
+              const activePlayers = currentRoom.gameState.players.filter(p => p.socketId !== null).length;
+              if (activePlayers === 0) {
+                roomRepo.deleteRoom(currentRoom.id);
+              } else {
+                broadcastState(currentRoom.id);
+              }
+              io.emit('ROOM_LIST', getPublicRooms());
+            }
+          }, 5000); // 5-second countdown
         }
       }
     });

@@ -27,12 +27,13 @@ function GameRouter() {
     socket.on('ROOM_LIST', (rooms) => setAvailableRooms(rooms));
     
     // When joining, we no longer need to prompt for username!
-    socket.on('ROOM_JOINED', ({ roomId, seatIndex }) => {
+    socket.on('ROOM_JOINED', ({ roomId, seatIndex, sessionId }) => {
+      // ✅ Grabbed sessionId in the parameters above, and removed "data." below
+      sessionStorage.setItem(`spades_session_${roomId}`, sessionId);
       setRoomId(roomId);
       setPlayingAs(seatIndex);
       navigate(`/room/${roomId}`); 
     });
-
     socket.on('STATE_UPDATE', (state) => setGameState(state));
     
     return () => {

@@ -2,7 +2,6 @@ const SUITS = ['hearts', 'clubs', 'diamonds', 'spades'];
 const RANKS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 const SUIT_ORDER = { hearts: 1, clubs: 2, diamonds: 3, spades: 4 };
 
-// ADDED: Password parameter and face tracking arrays
 exports.createInitialGameState = (password) => {
   return {
     roomPassword: password, 
@@ -15,13 +14,19 @@ exports.createInitialGameState = (password) => {
       { id: 3, name: 'Waiting...', socketId: null, sessionId: null, score: 0, hand: [], bid: null, tricksWon: 0 }
     ],
     phase: 'waiting', 
-    currentTurnIndex: 0, 
+    currentTurnIndex: 0,
+    dealerIndex: 0, // <--- THIS WAS MISSING AND CRASHING YOUR ROOMS!
     currentTrick: [], 
     spadesBroken: false,
     round: 1,
     overtimeRound: 0,
     overtimeActive: false,
-    history: []
+    history: [],
+    musicState: {
+        url: 'https://www.youtube.com/watch?v=LXb3EKWsInQ', 
+        isPlaying: false,
+        playedSeconds: 0
+      }
   };
 };
 
