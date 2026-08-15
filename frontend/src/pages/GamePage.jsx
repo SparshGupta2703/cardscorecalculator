@@ -9,7 +9,22 @@ import { AuthContext } from '../context/AuthContext';
 import PlayingCard from '../components/PlayingCard';
 import DJBooth from '../components/DJBooth'; 
 import toast from 'react-hot-toast';
-import { Spade, User, Trophy, Crown, Play, Image as ImageIcon, LogOut } from 'lucide-react';
+import { Spade, User, Trophy, Crown, Play, Image as ImageIcon, LogOut, Users } from 'lucide-react';
+
+// A cute little Casino-style Dealer Button
+const DealerChip = () => (
+  <span 
+    title="Dealer"
+    style={{ 
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      background: '#f8fafc', color: '#0f172a', fontWeight: '900', 
+      borderRadius: '50%', width: '22px', height: '22px', 
+      fontSize: '12px', marginLeft: '8px', border: '2px solid #0f172a',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.5)', verticalAlign: 'middle'
+    }}>
+    D
+  </span>
+);
 
 export default function GamePage({ gameState, roomId, playingAs }) {
   const { user, logout } = useContext(AuthContext);
@@ -24,21 +39,16 @@ export default function GamePage({ gameState, roomId, playingAs }) {
   // ==========================================
   useEffect(() => {
     if (!gameState && urlRoomId) {
-      // 1. Grab the saved ticket from the browser
       const savedSessionId = sessionStorage.getItem(`spades_session_${urlRoomId}`);
-      
       if (savedSessionId) {
-        // 2. We have a ticket! Ask the server to let us back in.
         socket.emit('REJOIN_ROOM', { roomId: urlRoomId, sessionId: savedSessionId });
       } else {
-        // 3. No ticket found, kick them back to the lobby
         toast.error("Session lost. Please rejoin from the lobby.");
         navigate('/');
       }
     }
   }, [gameState, urlRoomId, navigate]);
 
-  // Handle cases where the 5-second grace period expired before they rejoined
   useEffect(() => {
     const handleRejoinFailed = (msg) => {
       toast.error(msg || "Failed to rejoin room.");
@@ -53,7 +63,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
 
   const handleLeaveTable = () => {
     playSound('click');
-    // Destroy the saved ticket so it doesn't get stuck!
     sessionStorage.removeItem(`spades_session_${roomId || urlRoomId}`);
     socket.emit('LEAVE_ROOM', { roomId: roomId || urlRoomId });
     navigate('/');
@@ -61,7 +70,8 @@ export default function GamePage({ gameState, roomId, playingAs }) {
 
   if (!gameState) return <div className="loading">Entering Table...</div>;
   
-  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history, roomPassword, customFaceMap, musicState } = gameState;
+  // EXTRACTED dealerIndex FROM GAME STATE
+  const { players, phase, currentTurnIndex, dealerIndex, currentTrick, spadesBroken, round, history, roomPassword, customFaceMap, musicState } = gameState;
   
   const isMyTurn = phase !== 'waiting' && playingAs === currentTurnIndex;
 
@@ -113,10 +123,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
         </div>
         
         <div className="header-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-        
-          <div className="header-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-          
-          {/* ADD THIS WRAPPER TO HOLD BOTH BUTTONS */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
              <VoiceChat roomId={roomId || urlRoomId} playingAs={playingAs} players={players} />
              
@@ -127,8 +133,6 @@ export default function GamePage({ gameState, roomId, playingAs }) {
           
           <p className="round-badge" style={{ margin: 0 }}>Password: <span style={{color: '#facc15'}}>{roomPassword}</span></p>
           <div className="spades-status">Round {round} | Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
-        </div>
-          
         </div>
       </header>
 
@@ -148,15 +152,19 @@ export default function GamePage({ gameState, roomId, playingAs }) {
                 />
                 <ImageIcon size={20} color="#38bdf8" /> Use my AI Custom Royal Cards
               </label>
-              <p style={{ margin: '8px 0 0 32px', fontSize: '0.85rem', color: '#94a3b8' }}>
-                If checked, your personalized Jack, Queen, King, and Ace faces will be injected into this deck.
-              </p>
             </div>
 
             {playingAs === 0 && (
-              <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>
-                <Play size={18} style={{marginRight: '8px'}} /> Deal Cards
-              </button>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                {/* PREPPING THE TEAMS BUTTON FOR OUR NEXT STEP */}
+                <button className="btn-secondary flex-center" onClick={() => toast("Team logic coming next!")} style={{ background: '#334155', color: 'white', padding: '10px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>
+                  <Users size={18} style={{marginRight: '8px'}} /> Teams Mode
+                </button>
+
+                <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>
+                  <Play size={18} style={{marginRight: '8px'}} /> Deal Cards
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -168,7 +176,8 @@ export default function GamePage({ gameState, roomId, playingAs }) {
               const topP = players[(playingAs + 2) % 4];
               return (
                 <div className={`opponent-card pos-top ${currentTurnIndex === topP.id ? 'active-turn' : ''} ${!topP.socketId ? 'dimmed-card' : ''}`}>
-                  <h3>{topP.name}</h3>
+                  {/* INJECTED DEALER CHIP */}
+                  <h3>{topP.name} {dealerIndex === topP.id && <DealerChip />}</h3>
                   <div className="stats-row"><span>Score: {topP.score}</span> | <span>Bid: {topP.bid !== null ? topP.bid : '?'}</span> | <span>Won: {topP.tricksWon}</span></div>
                   
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
@@ -180,12 +189,12 @@ export default function GamePage({ gameState, roomId, playingAs }) {
               );
             })()}
 
-       
              {(() => {
               const leftP = players[(playingAs + 1) % 4];
               return (
                 <div className={`opponent-card pos-left ${currentTurnIndex === leftP.id ? 'active-turn' : ''} ${!leftP.socketId ? 'dimmed-card' : ''}`}>
-                  <h3>{leftP.name}</h3>
+                  {/* INJECTED DEALER CHIP */}
+                  <h3>{leftP.name} {dealerIndex === leftP.id && <DealerChip />}</h3>
                   <div className="stats-col"><span>Scr: {leftP.score}</span><span>Bid: {leftP.bid !== null ? leftP.bid : '?'}</span><span>Won: {leftP.tricksWon}</span></div>
                   
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
@@ -218,7 +227,8 @@ export default function GamePage({ gameState, roomId, playingAs }) {
               const rightP = players[(playingAs + 3) % 4];
               return (
                 <div className={`opponent-card pos-right ${currentTurnIndex === rightP.id ? 'active-turn' : ''} ${!rightP.socketId ? 'dimmed-card' : ''}`}>
-                  <h3>{rightP.name}</h3>
+                  {/* INJECTED DEALER CHIP */}
+                  <h3>{rightP.name} {dealerIndex === rightP.id && <DealerChip />}</h3>
                   <div className="stats-col"><span>Scr: {rightP.score}</span><span>Bid: {rightP.bid !== null ? rightP.bid : '?'}</span><span>Won: {rightP.tricksWon}</span></div>
                   
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
@@ -232,7 +242,8 @@ export default function GamePage({ gameState, roomId, playingAs }) {
 
             <div className={`my-area pos-bottom ${isMyTurn ? 'my-turn-active' : ''}`}>
               <div className="my-stats">
-                <h2>{players[playingAs]?.name || 'Spectator'} (You)</h2>
+                {/* INJECTED DEALER CHIP */}
+                <h2>{players[playingAs]?.name || 'Spectator'} (You) {dealerIndex === playingAs && <DealerChip />}</h2>
                 <div className="my-scores">
                   <span>Total Score: <strong>{players[playingAs]?.score || 0}</strong></span><span className="divider">|</span>
                   <span>Bid: <strong>{players[playingAs]?.bid !== null && players[playingAs]?.bid !== undefined ? players[playingAs].bid : '-'}</strong></span><span className="divider">|</span>
@@ -248,12 +259,41 @@ export default function GamePage({ gameState, roomId, playingAs }) {
                 </form>
               )}
 
-              <div className="my-hand stacked-cards my-stacked-cards">
-                {players[playingAs]?.hand?.map(card => {
+           <div className="my-hand stacked-cards my-stacked-cards">
+                {players[playingAs]?.hand?.map((card, idx) => {
                   const amIPlaying = phase === 'playing' && isMyTurn;
                   const canPlayCard = amIPlaying ? checkPlayable(players[playingAs].hand, card, currentTrick) : false;
                   const isDimmed = phase === 'playing' && (!isMyTurn || !canPlayCard);
-                  return <PlayingCard key={card.id} card={card} faceDown={false} isPlayable={canPlayCard} isDimmed={isDimmed} onClick={() => handlePlayCard(card.id)} customFaceMap={customFaceMap} />;
+                  
+                  // ==========================================
+                  // DEALING MATH MAGIC
+                  // 1. Calculate your seat order relative to the dealer (0 = first, 1 = second, etc.)
+                  const dealOrder = (playingAs - dealerIndex - 1 + 4) % 4;
+                  
+                  // 2. Calculate this specific card's global turn in the 52-card deck
+                  const globalCardNumber = (idx * 4) + dealOrder; 
+                  
+                  // 3. Multiply by 0.05 seconds to create a cascading delay!
+                  const dealDelay = globalCardNumber * 0.05; 
+                  // ==========================================
+
+                  return (
+                    <div 
+                      key={card.id} 
+                      // Only run the animation when the round starts (Bidding phase)
+                      className={phase === 'bidding' ? 'card-deal-anim' : ''} 
+                      style={{ animationDelay: `${dealDelay}s` }}
+                    >
+                      <PlayingCard 
+                        card={card} 
+                        faceDown={false} 
+                        isPlayable={canPlayCard} 
+                        isDimmed={isDimmed} 
+                        onClick={() => handlePlayCard(card.id)} 
+                        customFaceMap={customFaceMap} 
+                      />
+                    </div>
+                  );
                 })}
               </div>
             </div>

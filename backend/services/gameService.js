@@ -14,8 +14,11 @@ exports.createInitialGameState = (password) => {
       { id: 3, name: 'Waiting...', socketId: null, sessionId: null, score: 0, hand: [], bid: null, tricksWon: 0 }
     ],
     phase: 'waiting', 
-    currentTurnIndex: 0,
-    dealerIndex: 0, // <--- THIS WAS MISSING AND CRASHING YOUR ROOMS!
+    
+    // Seat 0 is the first dealer, so Seat 1 goes first!
+    dealerIndex: 0, 
+    currentTurnIndex: 1, 
+    
     currentTrick: [], 
     spadesBroken: false,
     round: 1,
@@ -29,7 +32,6 @@ exports.createInitialGameState = (password) => {
       }
   };
 };
-
 exports.generateDeck = () => {
   let deck = [];
   for (let suit of SUITS) {
@@ -45,7 +47,7 @@ exports.generateDeck = () => {
 };
 
 exports.dealCards = (gameState) => {
-  const deck = this.generateDeck();
+  const deck = exports.generateDeck(); // Note: Changed 'this' to 'exports' for safety
   gameState.players.forEach((p, i) => {
     p.hand = deck.slice(i * 13, (i + 1) * 13).sort((a, b) => {
       if (SUIT_ORDER[a.suit] !== SUIT_ORDER[b.suit]) return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
@@ -54,12 +56,17 @@ exports.dealCards = (gameState) => {
     p.bid = null;
     p.tricksWon = 0;
   });
+  
+  // MATH MAGIC: Automatically set the dealer based on the round number
+  gameState.dealerIndex = (gameState.round - 1) % 4;
+  
+  // The player to the left of the dealer always bids/plays first
+  gameState.currentTurnIndex = (gameState.dealerIndex + 1) % 4;
+  
   gameState.phase = 'bidding';
-  gameState.currentTurnIndex = 0;
   gameState.currentTrick = [];
   gameState.spadesBroken = false;
 };
-
 exports.isValidPlay = (hand, cardToPlay, trick) => {
   if (trick.length === 0) return true;
   const leadSuit = trick[0].card.suit;

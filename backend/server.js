@@ -12,6 +12,15 @@ const authRoutes = require('./routes/authRoutes'); // ADDED
 const setupSocket = require('./socket/socketHandler');
 
 const app = express();
+const path = require('path');
+
+// Tell Express to serve the static files from the React build folder
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Tell Express to catch any other routes and hand them back to React Router
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 app.use(cors());
 app.use(express.json());
 

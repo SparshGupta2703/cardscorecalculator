@@ -418,3 +418,24 @@ header h1 { margin: 0 0 8px 0; font-size: 1.5rem; color: #38bdf8; display: flex;
   /* Ensures it doesn't flicker before the animation starts */
   will-change: transform, opacity; 
 }
+
+/* ==========================================
+   CARD DEALING ANIMATION
+========================================== */
+@keyframes dealIn {
+  0% {
+    opacity: 0;
+    /* Cards start high up (the center of the table) and tiny */
+    transform: translateY(-250px) scale(0.2) rotate(-20deg);
+  }
+  100% {
+    opacity: 1;
+    /* Cards land in your hand perfectly */
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+.card-deal-anim {
+  /* backwards fill mode ensures the card stays invisible BEFORE its delay starts */
+  animation: dealIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
