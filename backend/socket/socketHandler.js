@@ -301,7 +301,37 @@ module.exports = (io) => {
       socket.emit('ROOM_LIST', getPublicRooms());
     });
     // ==========================================
+// ==========================================
+    // FIX: PROPERLY HANDLE PLAYERS LEAVING
+    // ==========================================
+    socket.on('LEAVE_ROOM', ({ roomId }) => {
+      const room = roomRepo.getRoom(roomId);
+      if (!room) return;
 
+      const player = room.gameState.players.find(p => p.socketId === socket.id);
+      if (player) {
+        // 1. Wipe their seat clean
+        player.name = 'Waiting...';
+        player.socketId = null;
+        player.sessionId = null;
+        player.score = 0;
+        player.hand = [];
+        player.bid = null;
+        player.tricksWon = 0;
+
+        // 2. Remove them from the socket channel
+        socket.leave(roomId);
+
+        // 3. If the room is now empty, delete it. Otherwise, update the remaining players.
+        const activePlayers = room.gameState.players.filter(p => p.socketId !== null).length;
+        if (activePlayers === 0) {
+          roomRepo.deleteRoom(roomId);
+        } else {
+          broadcastState(roomId);
+        }
+        io.emit('ROOM_LIST', getPublicRooms());
+      }
+    });
     // ==========================================
     // THE REFRESH TIMEOUT FIX
     // ==========================================
