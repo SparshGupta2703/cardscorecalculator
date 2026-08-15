@@ -310,19 +310,15 @@ module.exports = (io) => {
 
       const player = room.gameState.players.find(p => p.socketId === socket.id);
       if (player) {
-        // 1. Wipe their seat clean
+        // 1. Wipe their identity, BUT KEEP THE CARDS, SCORE, AND BID!
         player.name = 'Waiting...';
         player.socketId = null;
         player.sessionId = null;
-        player.score = 0;
-        player.hand = [];
-        player.bid = null;
-        player.tricksWon = 0;
-
+        
         // 2. Remove them from the socket channel
         socket.leave(roomId);
 
-        // 3. If the room is now empty, delete it. Otherwise, update the remaining players.
+        // 3. Check if room is empty
         const activePlayers = room.gameState.players.filter(p => p.socketId !== null).length;
         if (activePlayers === 0) {
           roomRepo.deleteRoom(roomId);
@@ -350,23 +346,18 @@ module.exports = (io) => {
 
           // Start the 5-second grace period timer
           setTimeout(() => {
-            // Fetch the room fresh from memory to see if they triggered the REJOIN_ROOM event
             const currentRoom = roomRepo.getRoom(room.id);
             if (!currentRoom) return; 
 
             const currentPlayer = currentRoom.gameState.players[playerIndex];
             
-            // If they STILL have no socketId after 5 seconds, they abandoned the game for good.
+            // If they still haven't reconnected, clear the seat for a new player
             if (currentPlayer.socketId === null) {
-              // Completely clear the seat so someone else can sit down
+              
+              // WIPE IDENTITY, KEEP THE CARDS!
               currentPlayer.name = 'Waiting...';
               currentPlayer.sessionId = null;    
-              currentPlayer.score = 0;
-              currentPlayer.hand = [];
-              currentPlayer.bid = null;
-              currentPlayer.tricksWon = 0;
 
-              // Check if the room is now completely empty
               const activePlayers = currentRoom.gameState.players.filter(p => p.socketId !== null).length;
               if (activePlayers === 0) {
                 roomRepo.deleteRoom(currentRoom.id);
@@ -375,7 +366,7 @@ module.exports = (io) => {
               }
               io.emit('ROOM_LIST', getPublicRooms());
             }
-          }, 5000); // 5-second countdown
+          }, 20000); // 20-second grace period for free server lag
         }
       }
     });
