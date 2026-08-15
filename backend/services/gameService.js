@@ -23,7 +23,7 @@ exports.createInitialGameState = (password) => {
     overtimeActive: false,
     history: [],
     musicState: {
-        url: 'https://www.youtube.com/watch?v=LXb3EKWsInQ', 
+        url: '', 
         isPlaying: false,
         playedSeconds: 0
       }
