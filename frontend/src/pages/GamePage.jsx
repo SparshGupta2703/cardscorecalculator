@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { socket } from '../socket/socketClient';
 import { playSound } from '../utils/audio';
 import { checkPlayable } from '../utils/gameRules';
+import VoiceChat from '../components/VoiceChat';
 import { AuthContext } from '../context/AuthContext';
 import PlayingCard from '../components/PlayingCard';
 import DJBooth from '../components/DJBooth'; 
@@ -112,9 +113,21 @@ export default function GamePage({ gameState, roomId, playingAs }) {
         </div>
         
         <div className="header-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-          <button onClick={handleLeaveTable} className="btn btn-error btn-sm btn-outline gap-2 text-xs">
-            <LogOut size={14} /> Leave Table
-          </button>
+        
+          <div className="header-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+          
+          {/* ADD THIS WRAPPER TO HOLD BOTH BUTTONS */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+             <VoiceChat roomId={roomId || urlRoomId} playingAs={playingAs} players={players} />
+             
+             <button onClick={handleLeaveTable} className="btn btn-error btn-sm btn-outline gap-2 text-xs">
+               <LogOut size={14} /> Leave Table
+             </button>
+          </div>
+          
+          <p className="round-badge" style={{ margin: 0 }}>Password: <span style={{color: '#facc15'}}>{roomPassword}</span></p>
+          <div className="spades-status">Round {round} | Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
+        </div>
           <p className="round-badge" style={{ margin: 0 }}>Password: <span style={{color: '#facc15'}}>{roomPassword}</span></p>
           <div className="spades-status">Round {round} | Spades Broken: {spadesBroken ? '🔴 Yes' : '⚪ No'}</div>
         </div>
