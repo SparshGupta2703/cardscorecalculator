@@ -1,27 +1,67 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react'; 
+import { useNavigate, useParams } from 'react-router-dom'; 
+
 import { socket } from '../socket/socketClient';
 import { playSound } from '../utils/audio';
 import { checkPlayable } from '../utils/gameRules';
 import { AuthContext } from '../context/AuthContext';
 import PlayingCard from '../components/PlayingCard';
+import DJBooth from '../components/DJBooth'; 
 import toast from 'react-hot-toast';
 import { Spade, User, Trophy, Crown, Play, Image as ImageIcon, LogOut } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 export default function GamePage({ gameState, roomId, playingAs }) {
   const { user, logout } = useContext(AuthContext);
   const [bidInput, setBidInput] = useState('');
   const [useCustomFaces, setUseCustomFaces] = useState(false);
-  const navigate = useNavigate();
   
+  const navigate = useNavigate();
+  const { id: urlRoomId } = useParams(); 
+
+  // ==========================================
+  // THE AUTO-REJOIN LOGIC
+  // ==========================================
+  useEffect(() => {
+    if (!gameState && urlRoomId) {
+      // 1. Grab the saved ticket from the browser
+      const savedSessionId = sessionStorage.getItem(`spades_session_${urlRoomId}`);
+      
+      if (savedSessionId) {
+        // 2. We have a ticket! Ask the server to let us back in.
+        socket.emit('REJOIN_ROOM', { roomId: urlRoomId, sessionId: savedSessionId });
+      } else {
+        // 3. No ticket found, kick them back to the lobby
+        toast.error("Session lost. Please rejoin from the lobby.");
+        navigate('/');
+      }
+    }
+  }, [gameState, urlRoomId, navigate]);
+
+  // Handle cases where the 5-second grace period expired before they rejoined
+  useEffect(() => {
+    const handleRejoinFailed = (msg) => {
+      toast.error(msg || "Failed to rejoin room.");
+      sessionStorage.removeItem(`spades_session_${urlRoomId}`);
+      navigate('/');
+    };
+    
+    socket.on('REJOIN_FAILED', handleRejoinFailed);
+    return () => socket.off('REJOIN_FAILED', handleRejoinFailed);
+  }, [urlRoomId, navigate]);
+  // ==========================================
+
   const handleLeaveTable = () => {
     playSound('click');
-    socket.emit('LEAVE_ROOM', { roomId });
+    // Destroy the saved ticket so it doesn't get stuck!
+    sessionStorage.removeItem(`spades_session_${roomId || urlRoomId}`);
+    socket.emit('LEAVE_ROOM', { roomId: roomId || urlRoomId });
     navigate('/');
   };
 
   if (!gameState) return <div className="loading">Entering Table...</div>;
-  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history, roomPassword, customFaceMap } = gameState;
+  
+  const { players, phase, currentTurnIndex, currentTrick, spadesBroken, round, history, roomPassword, customFaceMap, musicState } = gameState;
+  
   const isMyTurn = phase !== 'waiting' && playingAs === currentTurnIndex;
 
   const handleBidSubmit = (e) => {
@@ -111,24 +151,36 @@ export default function GamePage({ gameState, roomId, playingAs }) {
 
         {phase !== 'waiting' && phase !== 'game_over' && (
           <div className="game-table-grid">
-            {(() => {
+       
+             {(() => {
               const topP = players[(playingAs + 2) % 4];
               return (
                 <div className={`opponent-card pos-top ${currentTurnIndex === topP.id ? 'active-turn' : ''} ${!topP.socketId ? 'dimmed-card' : ''}`}>
                   <h3>{topP.name}</h3>
                   <div className="stats-row"><span>Score: {topP.score}</span> | <span>Bid: {topP.bid !== null ? topP.bid : '?'}</span> | <span>Won: {topP.tricksWon}</span></div>
-                  <div className="opponent-hand stacked-cards">{topP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} customFaceMap={customFaceMap} />)}</div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
+                    <span style={{ background: '#38bdf8', color: '#0f172a', padding: '4px 12px', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                      🂠 {topP.hand?.length || 0} Cards
+                    </span>
+                  </div>
                 </div>
               );
             })()}
 
-            {(() => {
+       
+             {(() => {
               const leftP = players[(playingAs + 1) % 4];
               return (
                 <div className={`opponent-card pos-left ${currentTurnIndex === leftP.id ? 'active-turn' : ''} ${!leftP.socketId ? 'dimmed-card' : ''}`}>
                   <h3>{leftP.name}</h3>
                   <div className="stats-col"><span>Scr: {leftP.score}</span><span>Bid: {leftP.bid !== null ? leftP.bid : '?'}</span><span>Won: {leftP.tricksWon}</span></div>
-                  <div className="opponent-hand vertical-stack">{leftP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} customFaceMap={customFaceMap} />)}</div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
+                    <span style={{ background: '#38bdf8', color: '#0f172a', padding: '4px 12px', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                      🂠 {leftP.hand?.length || 0} Cards
+                    </span>
+                  </div>
                 </div>
               );
             })()}
@@ -139,27 +191,29 @@ export default function GamePage({ gameState, roomId, playingAs }) {
                 <div key={idx} className={`absolute-trick ${getRelativePosition(play.playerIndex)}`} style={{ zIndex: idx + 1 }}>
                   <div className="trick-card-animated">
                     <small className="trick-name-label">{players[play.playerIndex].name}</small>
-                    
-                    {/* ADDED: isPlayed={true} right here to trigger the throw animation! */}
                     <PlayingCard 
                       card={play.card} 
                       faceDown={false} 
                       customFaceMap={customFaceMap} 
                       isPlayed={true} 
                     />
-                    
                   </div>
                 </div>
               ))}
             </div>
 
-            {(() => {
+           {(() => {
               const rightP = players[(playingAs + 3) % 4];
               return (
                 <div className={`opponent-card pos-right ${currentTurnIndex === rightP.id ? 'active-turn' : ''} ${!rightP.socketId ? 'dimmed-card' : ''}`}>
                   <h3>{rightP.name}</h3>
                   <div className="stats-col"><span>Scr: {rightP.score}</span><span>Bid: {rightP.bid !== null ? rightP.bid : '?'}</span><span>Won: {rightP.tricksWon}</span></div>
-                  <div className="opponent-hand vertical-stack">{rightP.hand?.map((_, idx) => <PlayingCard key={idx} faceDown={true} customFaceMap={customFaceMap} />)}</div>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px' }}>
+                    <span style={{ background: '#38bdf8', color: '#0f172a', padding: '4px 12px', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                      🂠 {rightP.hand?.length || 0} Cards
+                    </span>
+                  </div>
                 </div>
               );
             })()}
@@ -241,6 +295,9 @@ export default function GamePage({ gameState, roomId, playingAs }) {
           </div>
         </div>
       )}
+
+      {/* SAFELY DROPPED IN AT THE BOTTOM */}
+      <DJBooth roomId={roomId || urlRoomId} musicState={musicState} />
     </div>
   );
 }

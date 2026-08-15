@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react'; // <-- ADDED useEffect
 import { socket } from '../socket/socketClient';
 import { playSound } from '../utils/audio';
 import { AuthContext } from '../context/AuthContext';
@@ -11,10 +11,18 @@ export default function LobbyPage({ availableRooms }) {
   const [roomName, setRoomName] = useState('');
   const [roomPassword, setRoomPassword] = useState('');
 
- const handleCreateRoom = (e) => {
+  // ==========================================
+  // THE LOBBY REFRESH FIX
+  // ==========================================
+  useEffect(() => {
+    // The moment this page loads on screen, demand the room list from the server
+    socket.emit('GET_ROOMS');
+  }, []);
+  // ==========================================
+
+  const handleCreateRoom = (e) => {
     if (e) e.preventDefault(); 
     
-    // THIS IS THE MOST IMPORTANT CHECK:
     console.log("🚨 BUTTON CLICKED!");
     console.log("Is Socket Connected to Backend?:", socket.connected); 
 
@@ -41,17 +49,18 @@ export default function LobbyPage({ availableRooms }) {
     <div className="max-w-4xl mx-auto mt-10 p-4 text-center animate-pop">
       
       {/* HEADER WITH LOGOUT */}
-      <div className="flex items-center gap-4">
-  <span className="text-base-content/70">
-    Welcome, <strong className="text-info">{user?.username || 'Player'}</strong>
-  </span>
-  <Link to="/profile" className="btn btn-info btn-sm btn-outline gap-2">
-    Profile
-  </Link>
-  <button onClick={logout} className="btn btn-error btn-sm btn-outline gap-2">
-    <LogOut size={16} /> Logout
-  </button>
-</div>
+      <div className="flex items-center justify-center gap-4 mb-8">
+        <span className="text-base-content/70">
+          Welcome, <strong className="text-info">{user?.username || 'Player'}</strong>
+        </span>
+        <Link to="/profile" className="btn btn-info btn-sm btn-outline gap-2">
+          Profile
+        </Link>
+        <button onClick={logout} className="btn btn-error btn-sm btn-outline gap-2">
+          <LogOut size={16} /> Logout
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* CREATE ROOM PANEL */}
