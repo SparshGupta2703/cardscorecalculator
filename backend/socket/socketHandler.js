@@ -214,17 +214,30 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
 
-    socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
+        socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       const gs = room.gameState;
       if (gs.phase !== 'bidding' || gs.currentTurnIndex !== index) return;
       
+      // 1. Record the bid
       gs.players[index].bid = parseInt(bid, 10);
-      if (gs.currentTurnIndex < 3) gs.currentTurnIndex += 1;
-      else { gs.phase = 'playing'; gs.currentTurnIndex = 0; }
+      
+      // 2. Advance the turn in a circle (3 -> 0 -> 1)
+      gs.currentTurnIndex = (gs.currentTurnIndex + 1) % 4;
+      
+      // 3. Check if everyone has placed their bid
+      const allBidsIn = gs.players.every(p => p.bid !== null);
+      
+      if (allBidsIn) { 
+        gs.phase = 'playing'; 
+        // The person to the left of the dealer leads the very first card!
+        gs.currentTurnIndex = (gs.dealerIndex + 1) % 4; 
+      }
+      
       broadcastState(roomId);
     });
+
 
     socket.on('PLAY_CARD', ({ roomId, playerIndex, cardId }) => {
       const room = roomRepo.getRoom(roomId);
