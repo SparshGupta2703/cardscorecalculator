@@ -3,9 +3,10 @@ import Draggable from 'react-draggable';
 import { 
   Play, Pause, Volume2, Music, GripHorizontal, 
   Maximize2, Minimize2, ListMusic, SkipBack, SkipForward, 
-  Rewind, FastForward, Search, Loader 
+  Rewind,RefreshCw, FastForward, Search, Loader 
 } from 'lucide-react';
 import { socket } from '../socket/socketClient';
+import toast from 'react-hot-toast';
 
 // Extracts Video ID, Playlist ID, and Track Index
 const parseYouTubeUrl = (url) => {
@@ -121,6 +122,7 @@ export default function DJBooth({ roomId, musicState }) {
   }, []); 
 
   // 2. Handle URL / Playlist Changes
+  
   useEffect(() => {
     if (!isReady || !playerRef.current) return;
     
@@ -131,17 +133,18 @@ export default function DJBooth({ roomId, musicState }) {
           if (currentListIdRef.current === ytData.listId) {
             playerRef.current.playVideoAt(ytData.index);
           } else {
-            playerRef.current.cuePlaylist({ list: ytData.listId, index: ytData.index });
+            // CHANGED: Use loadPlaylist instead of cuePlaylist
+            playerRef.current.loadPlaylist({ list: ytData.listId, index: ytData.index });
             currentListIdRef.current = ytData.listId;
           }
         } else {
-          playerRef.current.cueVideoById(ytData.videoId);
+          // CHANGED: Use loadVideoById instead of cueVideoById
+          playerRef.current.loadVideoById(ytData.videoId);
           currentListIdRef.current = null;
         }
       } catch (e) {}
     }
   }, [rawUrl, ytData, isReady]);
-
   // 3. Play/Pause
   useEffect(() => {
     if (!isReady || !playerRef.current) return;
@@ -183,6 +186,10 @@ export default function DJBooth({ roomId, musicState }) {
     const handleResults = (results) => {
       setSearchResults(results);
       setIsSearching(false);
+
+      if (results.length === 0) {
+        toast.error("Cloud search blocked! Please paste a direct YouTube link instead.");
+      }
     };
     socket.on('YOUTUBE_RESULTS', handleResults);
     return () => socket.off('YOUTUBE_RESULTS', handleResults);
@@ -252,6 +259,18 @@ export default function DJBooth({ roomId, musicState }) {
 
   const handleNextTrack = () => {
     if (playlistIds.length > 0 && currentTrackIndex < playlistIds.length - 1) handleSelectPlaylistTrack(currentTrackIndex + 1, true); 
+  };
+  const handleResync = () => {
+    if (playerRef.current && isReady) {
+      // Force the player to jump exactly to where the backend says it should be
+      playerRef.current.seekTo(musicState.playedSeconds || 0, true);
+      
+      if (musicState.isPlaying) {
+        playerRef.current.playVideo();
+      } else {
+        playerRef.current.pauseVideo();
+      }
+    }
   };
 
   return (
@@ -409,15 +428,27 @@ export default function DJBooth({ roomId, musicState }) {
               </button>
             </div>
 
-            <div className="flex items-center gap-3 px-2 mb-1">
-              <Volume2 size={14} className="text-gray-500" />
-              <input
-                type="range"
-                min="0" max="100" step="1"
-                value={volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
-                className="w-full accent-sky-400 cursor-pointer h-1 bg-gray-800 rounded-lg appearance-none"
-              />
+            {/* VOLUME & RESYNC CONTROLS */}
+            <div className="flex items-center justify-between px-2 mb-1 mt-2">
+              <div className="flex items-center gap-3 w-full pr-4 border-r border-gray-800">
+                <Volume2 size={14} className="text-gray-500" />
+                <input
+                  type="range"
+                  min="0" max="100" step="1"
+                  value={volume}
+                  onChange={(e) => setVolume(Number(e.target.value))}
+                  className="w-full accent-sky-400 cursor-pointer h-1 bg-gray-800 rounded-lg appearance-none"
+                />
+              </div>
+              
+              {/* THE NEW RESYNC BUTTON */}
+              <button 
+                onClick={handleResync} 
+                className="pl-4 text-gray-500 hover:text-sky-400 transition-colors flex items-center gap-1"
+                title="Resync audio with table"
+              >
+                <RefreshCw size={14} />
+              </button>
             </div>
 
           </div>

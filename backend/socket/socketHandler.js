@@ -26,22 +26,39 @@ module.exports = (io) => {
     // MUSIC PLAYER / DJ BOOTH LOGIC
     // ==========================================
 
-   socket.on('SEARCH_YOUTUBE', async (query) => {
+ socket.on('SEARCH_YOUTUBE', async (query) => {
       try {
-        // Scrape YouTube silently on the server
-        const r = await ytSearch(query);
-        // Grab the top 5 video results
-        const videos = r.videos.slice(0, 5).map(v => ({
-          title: v.title,
-          url: v.url,
-          thumbnail: v.thumbnail,
-          duration: v.timestamp
-        }));
+        const apiKey = process.env.YOUTUBE_API_KEY;
         
-        // Send the results back ONLY to the player who searched
+        // Fallback safety check
+        if (!apiKey) {
+          console.error("Missing YouTube API Key!");
+          return socket.emit('YOUTUBE_RESULTS', []); 
+        }
+
+        // Hit the official, unblockable YouTube API
+        const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=5&q=${encodeURIComponent(query)}&type=video&key=${apiKey}`);
+        const data = await response.json();
+
+        if (!data.items) {
+          return socket.emit('YOUTUBE_RESULTS', []);
+        }
+
+        // Format the results to match exactly what your React UI expects
+        const videos = data.items
+          .filter(item => item.id.videoId) // Make sure it's a video, not a channel
+          .map(item => ({
+            title: item.snippet.title,
+            url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+            thumbnail: item.snippet.thumbnails.default.url,
+            // The Search API doesn't return duration, so we provide a sleek fallback
+            duration: "YouTube" 
+          }));
+        
         socket.emit('YOUTUBE_RESULTS', videos);
       } catch (err) {
-        console.error("YouTube Search Error:", err);
+        console.error("YouTube Official API Error:", err);
+        socket.emit('YOUTUBE_RESULTS', []);
       }
     });
 
@@ -235,11 +252,9 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
 
-<<<<<<< HEAD
+
    socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
-=======
-        socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
->>>>>>> 189184819e64031c084766c13ea19d9e5afad6a7
+
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       const gs = room.gameState;

@@ -48,7 +48,25 @@ export default function GamePage({ gameState, roomId, playingAs }) {
       }
     }
   }, [gameState, urlRoomId, navigate]);
+// ==========================================
+  // THE SILENT RECONNECT FIX (For Cloud Hosting)
+  // ==========================================
+  useEffect(() => {
+    const handleSilentReconnect = () => {
+      // If Render dropped our connection and we auto-reconnected, 
+      // secretly tell the backend our new Socket ID so we don't miss updates!
+      const targetRoom = urlRoomId || roomId;
+      const savedSessionId = sessionStorage.getItem(`spades_session_${targetRoom}`);
+      
+      if (savedSessionId && targetRoom) {
+        socket.emit('REJOIN_ROOM', { roomId: targetRoom, sessionId: savedSessionId });
+      }
+    };
 
+    socket.on('connect', handleSilentReconnect);
+    return () => socket.off('connect', handleSilentReconnect);
+  }, [urlRoomId, roomId]);
+  // ==========================================
   useEffect(() => {
     const handleRejoinFailed = (msg) => {
       toast.error(msg || "Failed to rejoin room.");
@@ -140,7 +158,7 @@ export default function GamePage({ gameState, roomId, playingAs }) {
         {phase === 'waiting' && (
           <div className="center-action animate-pop" style={{ maxWidth: '450px' }}>
             <h2>Waiting for Players ({players.filter(p => p.socketId).length}/4)</h2>
-            <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to 26 wins. 1 trick = 1 point.</p>
+            <p style={{marginBottom: '16px', color: '#a2a8d3'}}>First to {gameState?.targetScore || 26}. wins. 1 trick = 1 point.</p>
             
             <div style={{ background: 'rgba(0,0,0,0.5)', padding: '16px', borderRadius: '12px', marginBottom: '20px', textAlign: 'left' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', color: '#f8fafc', fontWeight: 'bold' }}>
@@ -156,10 +174,7 @@ export default function GamePage({ gameState, roomId, playingAs }) {
 
             {playingAs === 0 && (
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                {/* PREPPING THE TEAMS BUTTON FOR OUR NEXT STEP */}
-                <button className="btn-secondary flex-center" onClick={() => toast("Team logic coming next!")} style={{ background: '#334155', color: 'white', padding: '10px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>
-                  <Users size={18} style={{marginRight: '8px'}} /> Teams Mode
-                </button>
+                
 
                 <button className="btn-primary flex-center" onClick={() => { playSound('click'); socket.emit('START_GAME', roomId); }}>
                   <Play size={18} style={{marginRight: '8px'}} /> Deal Cards
