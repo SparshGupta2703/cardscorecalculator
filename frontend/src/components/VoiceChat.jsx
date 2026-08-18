@@ -27,7 +27,21 @@ export default function VoiceChat({ roomId, playingAs, players }) {
 
       // 2. Connect to the PeerJS Cloud using your exact seat as your "Phone Number"
       const myPeerId = `spades-${roomId}-seat-${playingAs}`;
-      const peer = new Peer(myPeerId);
+      
+      // ==========================================
+      // STUN SERVERS ADDED HERE TO FIX MAC/NAT FIREWALLS
+      // ==========================================
+      const peer = new Peer(myPeerId, {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+          ]
+        }
+      });
       peerInstance.current = peer;
 
       peer.on('open', (id) => {
@@ -69,6 +83,10 @@ export default function VoiceChat({ roomId, playingAs, players }) {
     if (!audioRefs.current[seatIndex]) {
       const audio = new Audio();
       audio.autoplay = true;
+      // ==========================================
+      // PLAYSINLINE ADDED HERE TO FIX MAC AUTOPLAY BLOCK
+      // ==========================================
+      audio.playsInline = true; 
       audioRefs.current[seatIndex] = audio;
     }
     audioRefs.current[seatIndex].srcObject = stream;
