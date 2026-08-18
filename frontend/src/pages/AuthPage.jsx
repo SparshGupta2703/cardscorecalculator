@@ -16,8 +16,11 @@ export default function AuthPage() {
     setIsLoading(true);
     
   // Hard-code the fallback so it never resolves to "undefined"
-const API_URL = import.meta.env.VITE_API_URL ;
-const endpoint = isLogin ? `${API_URL}/auth/login` : `${API_URL}/auth/register`;
+const isDev = import.meta.env.DEV;
+
+// 2. If dev, use localhost. If production, use an empty string so it automatically attaches to your Ngrok/Playit domain!
+const API_URL = import.meta.env.VITE_SOCKET_URL;
+const endpoint = isLogin ? `${API_URL}/api/auth/login` : `${API_URL}/api/auth/register`;
 
     const formData = new FormData();
     formData.append('username', username);

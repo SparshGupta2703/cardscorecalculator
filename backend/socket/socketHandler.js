@@ -1,5 +1,6 @@
 const roomRepo = require('../repository/roomRepository');
 const gameService = require('../services/gameService');
+const ytSearch = require('yt-search');
 
 module.exports = (io) => {
   const getPublicRooms = () => roomRepo.getAllRooms().map(r => ({
@@ -24,6 +25,25 @@ module.exports = (io) => {
     // ==========================================
     // MUSIC PLAYER / DJ BOOTH LOGIC
     // ==========================================
+
+   socket.on('SEARCH_YOUTUBE', async (query) => {
+      try {
+        // Scrape YouTube silently on the server
+        const r = await ytSearch(query);
+        // Grab the top 5 video results
+        const videos = r.videos.slice(0, 5).map(v => ({
+          title: v.title,
+          url: v.url,
+          thumbnail: v.thumbnail,
+          duration: v.timestamp
+        }));
+        
+        // Send the results back ONLY to the player who searched
+        socket.emit('YOUTUBE_RESULTS', videos);
+      } catch (err) {
+        console.error("YouTube Search Error:", err);
+      }
+    });
 
     socket.on('UPDATE_TRACK', ({ roomId, url }) => {
       const room = roomRepo.getRoom(roomId);
@@ -52,7 +72,7 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
 
-    socket.on('CREATE_ROOM', ({ roomName, password, username }) => {
+    socket.on('CREATE_ROOM',({ roomName, password, username, targetScore }) => {
       try {
         console.log(`[CREATE_ROOM] Request from: ${username}`);
         const roomId = Math.random().toString(36).substring(2, 9);
@@ -62,7 +82,8 @@ module.exports = (io) => {
           id: roomId, 
           name: roomName, 
           password: password, 
-          gameState: gameService.createInitialGameState(password)
+          gameState: gameService.createInitialGameState(password),
+          gameState: gameService.createInitialGameState(password, parseInt(targetScore, 10) || 26)
         });
         
         newRoom.gameState.players[0].name = username || 'Player 1';
@@ -214,19 +235,31 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
 
-    socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
+   socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       const gs = room.gameState;
       if (gs.phase !== 'bidding' || gs.currentTurnIndex !== index) return;
       
+      // 1. Record the bid
       gs.players[index].bid = parseInt(bid, 10);
-      if (gs.currentTurnIndex < 3) gs.currentTurnIndex += 1;
-      else { gs.phase = 'playing'; gs.currentTurnIndex = 0; }
+      
+      // 2. Advance the turn in a circle (3 -> 0 -> 1)
+      gs.currentTurnIndex = (gs.currentTurnIndex + 1) % 4;
+      
+      // 3. Check if everyone has placed their bid
+      const allBidsIn = gs.players.every(p => p.bid !== null);
+      
+      if (allBidsIn) { 
+        gs.phase = 'playing'; 
+        // The person to the left of the dealer leads the very first card!
+        gs.currentTurnIndex = (gs.dealerIndex + 1) % 4; 
+      }
+      
       broadcastState(roomId);
     });
 
-    socket.on('PLAY_CARD', ({ roomId, playerIndex, cardId }) => {
+   socket.on('PLAY_CARD', ({ roomId, playerIndex, cardId }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       const gs = room.gameState;
@@ -264,46 +297,70 @@ module.exports = (io) => {
         gs.players[winningPlay.playerIndex].tricksWon += 1;
         gs.currentTurnIndex = winningPlay.playerIndex; 
 
-        setTimeout(() => {
-          gs.currentTrick = [];
-          if (gs.players[0].hand.length === 0) {
-            const roundRecord = { round: gs.round, playerResults: [] };
-            gs.players.forEach(p => {
-              let pointsChange = p.tricksWon >= p.bid ? p.bid : -p.bid;
-              p.score += pointsChange;
-              roundRecord.playerResults.push({ bid: p.bid, won: p.tricksWon, change: pointsChange, totalAfter: p.score });
-            });
-            gs.history.push(roundRecord);
+       setTimeout(() => {
+         gs.currentTrick = [];
+         
+         // === ROUND IS OVER ===
+         if (gs.players[0].hand.length === 0) {
+           const roundRecord = { round: gs.round, playerResults: [] };
+           
+           gs.players.forEach(p => {
+             // 1. Base Score Change (Did they make their bid?)
+             let pointsChange = p.tricksWon >= p.bid ? p.bid : -p.bid;
+             
+             // ==========================================
+             // 2. THE LUCK & BAGS SYSTEM
+             // ==========================================
+             let bagsTaken = p.tricksWon - p.bid;
+             
+             // Only count bags if they actually made their bid
+             if (bagsTaken > 0 && p.tricksWon >= p.bid) {
+               p.bags = (p.bags || 0) + bagsTaken;
+               
+               // Deduct 0.1 luck per bag
+               p.luck -= (bagsTaken * 0.1);
+               p.luck = parseFloat(p.luck.toFixed(1)); 
+               
+               if (p.luck <= 0) p.luck = 1.0; // Reset at rock bottom
+             }
+             // ==========================================
 
-            const maxScore = Math.max(...gs.players.map(p => p.score));
-            const hasTie = new Set(gs.players.map(p => p.score)).size !== gs.players.length; 
+             p.score += pointsChange;
+             roundRecord.playerResults.push({ bid: p.bid, won: p.tricksWon, change: pointsChange, totalAfter: p.score });
+           });
+           gs.history.push(roundRecord);
 
-            if (maxScore >= 26) {
-              if (hasTie && maxScore > 15) {
-                gs.overtimeRound += 1;
-                gs.phase = gs.overtimeRound > 3 ? 'game_over' : 'scoring';
-                gs.overtimeActive = gs.phase === 'scoring';
-              } else gs.phase = 'game_over';
-            } else {
-              gs.phase = 'scoring'; gs.overtimeActive = false;
-            }
-          }
-          broadcastState(roomId);
-        }, 3000); 
+           const maxScore = Math.max(...gs.players.map(p => p.score));
+           const hasTie = new Set(gs.players.map(p => p.score)).size !== gs.players.length; 
+
+           // ==========================================
+           // 3. TARGET SCORE TIE-BREAKER LOGIC
+           // ==========================================
+           // Uses the dynamic target score set during room creation
+           if (maxScore >= gs.targetScore) {
+             if (hasTie) {
+               gs.overtimeRound += 1;
+               gs.phase = gs.overtimeRound > 3 ? 'game_over' : 'scoring';
+               gs.overtimeActive = gs.phase === 'scoring';
+             } else {
+                 gs.phase = 'game_over';
+             }
+           } else {
+             gs.phase = 'scoring'; 
+             gs.overtimeActive = false;
+           }
+         }
+         broadcastState(roomId);
+       }, 3000);
       }
       broadcastState(roomId);
     });
     
-    // ==========================================
-    // ADD THIS NEW EVENT LISTENER:
-    // ==========================================
+   
     socket.on('GET_ROOMS', () => {
       socket.emit('ROOM_LIST', getPublicRooms());
     });
-    // ==========================================
-// ==========================================
-    // FIX: PROPERLY HANDLE PLAYERS LEAVING
-    // ==========================================
+
     socket.on('LEAVE_ROOM', ({ roomId }) => {
       const room = roomRepo.getRoom(roomId);
       if (!room) return;

@@ -3,7 +3,7 @@ import Draggable from 'react-draggable';
 import { 
   Play, Pause, Volume2, Music, GripHorizontal, 
   Maximize2, Minimize2, ListMusic, SkipBack, SkipForward, 
-  Rewind, FastForward 
+  Rewind, FastForward, Search, Loader 
 } from 'lucide-react';
 import { socket } from '../socket/socketClient';
 
@@ -34,12 +34,18 @@ export default function DJBooth({ roomId, musicState }) {
 
   const [isReady, setIsReady] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [urlInput, setUrlInput] = useState('');
   const [volume, setVolume] = useState(50); 
   
   const [playlistIds, setPlaylistIds] = useState([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [trackNames, setTrackNames] = useState({});
+
+  // ==========================================
+  // NEW SEARCH STATES
+  // ==========================================
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const rawUrl = musicState?.url || '';
   const isPlaying = musicState?.isPlaying || false;
@@ -162,18 +168,24 @@ export default function DJBooth({ roomId, musicState }) {
     } catch (err) {}
   }, [playedSeconds, isReady, isPlaying]);
 
-  // Secretly fetch the real name of the current track
+  // 6. Fetch Track Names & Listen for Search Results
   useEffect(() => {
-    if (!ytData.videoId || trackNames[ytData.videoId]) return;
-    
-    fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${ytData.videoId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.title) {
-          setTrackNames(prev => ({ ...prev, [ytData.videoId]: data.title }));
-        }
-      })
-      .catch(() => {});
+    // Track Names
+    if (ytData.videoId && !trackNames[ytData.videoId]) {
+      fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${ytData.videoId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.title) setTrackNames(prev => ({ ...prev, [ytData.videoId]: data.title }));
+        }).catch(() => {});
+    }
+
+    // Search Results Listener
+    const handleResults = (results) => {
+      setSearchResults(results);
+      setIsSearching(false);
+    };
+    socket.on('YOUTUBE_RESULTS', handleResults);
+    return () => socket.off('YOUTUBE_RESULTS', handleResults);
   }, [ytData.videoId, trackNames]);
 
 
@@ -182,12 +194,30 @@ export default function DJBooth({ roomId, musicState }) {
   // ==========================================
   const handlePlayPause = () => socket.emit('TOGGLE_PLAY', { roomId, isPlaying: !isPlaying });
   
-  const handleQueueSong = (e) => {
+  // FIX: Combined URL paste and Search query into one function!
+  const handleSearchOrQueue = (e) => {
     e.preventDefault();
-    if (urlInput.trim()) {
-      socket.emit('UPDATE_TRACK', { roomId, url: urlInput });
-      setUrlInput('');
+    if (!searchQuery.trim()) return;
+
+    if (searchQuery.includes('youtube.com') || searchQuery.includes('youtu.be')) {
+      // It's a direct URL - Queue and AutoPlay!
+      socket.emit('UPDATE_TRACK', { roomId, url: searchQuery });
+      socket.emit('TOGGLE_PLAY', { roomId, isPlaying: true });
+      setSearchQuery('');
+      setSearchResults([]);
+    } else {
+      // It's a search term
+      setIsSearching(true);
+      socket.emit('SEARCH_YOUTUBE', searchQuery);
     }
+  };
+
+  const playSearchedVideo = (url) => {
+    socket.emit('UPDATE_TRACK', { roomId, url });
+    // FIX: Force it to auto-play after picking a search result
+    socket.emit('TOGGLE_PLAY', { roomId, isPlaying: true });
+    setSearchResults([]);
+    setSearchQuery('');
   };
 
   const handleRewind = () => {
@@ -206,36 +236,30 @@ export default function DJBooth({ roomId, musicState }) {
 
   const handleSelectPlaylistTrack = (targetIndex, shouldPause = false) => {
     setCurrentTrackIndex(targetIndex); 
-    
     const newUrl = `https://www.youtube.com/watch?v=${playlistIds[targetIndex]}&list=${ytData.listId}&index=${targetIndex + 1}`;
     socket.emit('UPDATE_TRACK', { roomId, url: newUrl });
     
     if (shouldPause) {
-      setTimeout(() => {
-        socket.emit('TOGGLE_PLAY', { roomId, isPlaying: false });
-      }, 50);
+      setTimeout(() => { socket.emit('TOGGLE_PLAY', { roomId, isPlaying: false }); }, 50);
+    } else {
+      setTimeout(() => { socket.emit('TOGGLE_PLAY', { roomId, isPlaying: true }); }, 50);
     }
   };
 
   const handlePrevTrack = () => {
-    if (playlistIds.length > 0 && currentTrackIndex > 0) {
-      handleSelectPlaylistTrack(currentTrackIndex - 1, true); 
-    }
+    if (playlistIds.length > 0 && currentTrackIndex > 0) handleSelectPlaylistTrack(currentTrackIndex - 1, true); 
   };
 
   const handleNextTrack = () => {
-    if (playlistIds.length > 0 && currentTrackIndex < playlistIds.length - 1) {
-      handleSelectPlaylistTrack(currentTrackIndex + 1, true); 
-    }
+    if (playlistIds.length > 0 && currentTrackIndex < playlistIds.length - 1) handleSelectPlaylistTrack(currentTrackIndex + 1, true); 
   };
 
   return (
-    // FIX: Added cancel="button, input" so mobile taps aren't swallowed by the drag event
-    <Draggable nodeRef={nodeRef} handle=".drag-handle" cancel="button, input" bounds="body">
+    // FIX: Added .result-item to cancel list so clicking a search result doesn't drag the booth!
+    <Draggable nodeRef={nodeRef} handle=".drag-handle" cancel="button, input, .result-item" bounds="body">
       <div
         ref={nodeRef}
         className={`fixed z-[9999] bg-gray-900 border border-gray-700 shadow-2xl transition-all duration-300 overflow-hidden flex flex-col ${
-          // FIX: Changed from rounded-xl to rounded-[2rem] for a beautiful capsule shape
           isMinimized ? 'rounded-full p-1' : 'rounded-[2rem]'
         }`}
         style={{
@@ -272,7 +296,6 @@ export default function DJBooth({ roomId, musicState }) {
 
         {/* EXPANDED VIEW HEADER */}
         <div style={{ display: isMinimized ? 'none' : 'block' }}>
-          {/* FIX: Separated the drag-handle class from the minimize button so the tap works on mobile! */}
           <div className="w-full bg-gray-800 p-3 flex justify-between items-center border-b border-gray-700">
             <div className="drag-handle flex-1 flex items-center gap-2 text-gray-400 px-2 cursor-grab">
               <GripHorizontal size={16}/> <span className="text-xs font-bold uppercase tracking-wider text-sky-400">DJ Booth</span>
@@ -303,13 +326,33 @@ export default function DJBooth({ roomId, musicState }) {
           <div ref={playerContainerRef} style={{ width: '100%', height: '100%' }}></div>
         </div>
 
-        {/* PLAYLIST DRAWER */}
-        {!isMinimized && playlistIds.length > 1 && (
+        {/* SEARCH RESULTS DROPDOWN (Appears over the playlist) */}
+        {!isMinimized && searchResults.length > 0 && (
+          <div className="px-3 pt-3">
+            <div className="max-h-32 overflow-y-auto bg-gray-950 rounded-2xl border border-gray-800 block custom-scrollbar overflow-hidden">
+              {searchResults.map((vid, idx) => (
+                <div 
+                  key={idx} 
+                  onClick={() => playSearchedVideo(vid.url)}
+                  className="result-item flex items-center gap-3 p-2 border-b border-gray-800 last:border-0 hover:bg-gray-800 transition-colors cursor-pointer"
+                >
+                  <img src={vid.thumbnail} alt="thumb" className="w-12 h-9 object-cover rounded" />
+                  <div className="flex-1 overflow-hidden">
+                    <p className="text-white text-xs truncate m-0">{vid.title}</p>
+                    <p className="text-gray-500 text-[10px] m-0">{vid.duration}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* PLAYLIST DRAWER (Hidden if searching) */}
+        {!isMinimized && searchResults.length === 0 && playlistIds.length > 1 && (
           <div className="px-3 pt-3">
             <div className="text-[10px] text-sky-400 mb-1 font-bold tracking-wider flex items-center gap-1 ml-2">
               <ListMusic size={12}/> PLAYLIST ({playlistIds.length} Tracks)
             </div>
-            {/* FIX: Rounded the playlist box edges a bit more to match the outer capsule */}
             <div className="max-h-28 overflow-y-auto bg-gray-950 rounded-2xl border border-gray-800 block custom-scrollbar overflow-hidden">
               {playlistIds.map((id, idx) => (
                 <button
@@ -331,21 +374,19 @@ export default function DJBooth({ roomId, musicState }) {
         {!isMinimized && (
           <div className="p-4 flex flex-col gap-4">
             
-            <form onSubmit={handleQueueSong} className="flex gap-2">
+            <form onSubmit={handleSearchOrQueue} className="flex gap-2">
               <input
                 type="text"
-                placeholder="Paste Video or Playlist URL..."
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                // FIX: Rounded the input fully to match the capsule theme
+                placeholder="Search or Paste URL..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 px-4 py-2 rounded-full border border-gray-700 bg-gray-800 text-white text-xs outline-none focus:border-sky-400"
               />
-              <button type="submit" className="px-4 py-2 bg-sky-400 text-gray-900 rounded-full font-bold hover:bg-sky-300">
-                <Music size={14} />
+              <button type="submit" className="px-4 py-2 bg-sky-400 text-gray-900 rounded-full font-bold hover:bg-sky-300 flex items-center justify-center">
+                {isSearching ? <Loader size={14} className="animate-spin" /> : <Search size={14} />}
               </button>
             </form>
 
-            {/* FIX: Rounded the media controller fully to match the theme */}
             <div className="flex items-center justify-center gap-5 bg-gray-950/50 py-3 rounded-full border border-gray-800">
               <button onClick={handlePrevTrack} className={`text-gray-400 hover:text-white transition-colors ${playlistIds.length === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}>
                 <SkipBack size={18} />
