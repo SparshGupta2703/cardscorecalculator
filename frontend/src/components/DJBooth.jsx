@@ -10,13 +10,15 @@ import toast from 'react-hot-toast';
 
 // Extracts Video ID, Playlist ID, and Track Index
 const parseYouTubeUrl = (url) => {
-  if (!url) return { videoId: '', listId: 'PLl2jQn4j1xPhjPgjze0Ks19_z7gT7Eq1l', index: 0 };
+  // 1. Swap the listId fallback to the new videoId
+  if (!url) return { videoId: 'mxr2ZCSQVvY', listId: null, index: 0 };
   
   const listMatch = url.match(/[?&]list=([^#\&\?]+)/);
   const videoMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
   const indexMatch = url.match(/[?&]index=(\d+)/);
 
-  if (!listMatch && !videoMatch) return { videoId: '', listId: 'PLl2jQn4j1xPhjPgjze0Ks19_z7gT7Eq1l', index: 0 };
+  // 2. Do the same for the invalid match fallback
+  if (!listMatch && !videoMatch) return { videoId: 'mxr2ZCSQVvY', listId: null, index: 0 };
 
   return {
     videoId: videoMatch ? videoMatch[1] : '',

@@ -27,7 +27,7 @@ exports.createInitialGameState = (password,targetScore = 26) => {
     history: [],
     targetScore: targetScore,
     musicState: {
-        url: '', 
+        url: 'https://www.youtube.com/watch?v=mxr2ZCSQVvY', 
         isPlaying: false,
         playedSeconds: 0
       }
