@@ -235,7 +235,11 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
 
+<<<<<<< HEAD
    socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
+=======
+        socket.on('SUBMIT_BID', ({ roomId, index, bid }) => {
+>>>>>>> 189184819e64031c084766c13ea19d9e5afad6a7
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       const gs = room.gameState;
@@ -259,7 +263,10 @@ module.exports = (io) => {
       broadcastState(roomId);
     });
 
+
    socket.on('PLAY_CARD', ({ roomId, playerIndex, cardId }) => {
+
+
       const room = roomRepo.getRoom(roomId);
       if (!room) return;
       const gs = room.gameState;
